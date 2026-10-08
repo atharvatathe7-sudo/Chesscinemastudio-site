@@ -1,0 +1,3873 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Video Effects Lab</title>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f4f5f7;
+    --card: #ffffff;
+    --border: #d9dce1;
+    --text: #1b1f24;
+    --muted: #5b6470;
+    --accent: #2f6fed;
+    --accent-hover: #2559c4;
+    --danger: #c0392b;
+    --ok: #1e8e3e;
+    --sel: #e8f0fe;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  .app { max-width: 1000px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px 0; }
+  .subtitle { color: var(--muted); margin: 0 0 20px 0; }
+  section.card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    margin-bottom: 16px;
+  }
+  section.card h2 {
+    font-size: 15px;
+    margin: 0 0 12px 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  section.card h2 .num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    font-size: 11px;
+    flex: none;
+  }
+  h3 { font-size: 13px; margin: 16px 0 8px 0; }
+  .row { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 12px; color: var(--muted); }
+  input[type="number"], select, input[type="file"] {
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 13px;
+    background: #fff;
+    color: var(--text);
+  }
+  input[type="number"] { width: 110px; }
+  button {
+    padding: 8px 16px;
+    border-radius: 6px;
+    border: 1px solid var(--accent);
+    background: var(--accent);
+    color: #fff;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  button:hover:not(:disabled) { background: var(--accent-hover); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.secondary { background: #fff; color: var(--accent); }
+  button.tiny {
+    padding: 3px 9px;
+    font-size: 12px;
+    background: #fff;
+    color: var(--muted);
+    border-color: var(--border);
+  }
+  button.tiny.danger { color: var(--danger); }
+  button.tiny:hover:not(:disabled) { background: #f0f2f5; }
+  .videos { display: flex; gap: 20px; flex-wrap: wrap; }
+  .video-block { flex: 1 1 320px; min-width: 280px; }
+  .video-block h3 {
+    font-size: 12px; color: var(--muted); margin: 0 0 6px 0;
+    text-transform: uppercase; letter-spacing: 0.03em;
+  }
+  video { width: 100%; max-height: 320px; background: #000; border-radius: 6px; display: block; }
+  table.meta { border-collapse: collapse; width: 100%; }
+  table.meta td { padding: 4px 8px 4px 0; vertical-align: top; }
+  table.meta td.k { color: var(--muted); width: 175px; }
+  table.fxlist { border-collapse: collapse; width: 100%; font-size: 13px; }
+  table.fxlist th {
+    text-align: left; font-size: 11px; color: var(--muted); font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.03em;
+    border-bottom: 1px solid var(--border); padding: 6px 8px;
+  }
+  table.fxlist td { padding: 6px 8px; border-bottom: 1px solid #eceef1; vertical-align: middle; }
+  table.fxlist tr.selected td { background: var(--sel); }
+  table.fxlist tr.clickable { cursor: pointer; }
+  table.fxlist tr.disabled td.fxname, table.fxlist tr.disabled td.fxtime, table.fxlist tr.disabled td.fxparams {
+    opacity: 0.45; text-decoration: line-through;
+  }
+  td.fxname { font-weight: 600; }
+  td.warn { color: var(--danger); font-size: 12px; }
+  .progress-wrap { background: #e7e9ec; border-radius: 6px; height: 10px; overflow: hidden; margin-top: 10px; }
+  .progress-bar { height: 100%; width: 0%; background: var(--accent); transition: width 0.15s linear; }
+  .status { margin-top: 10px; font-size: 12.5px; color: var(--muted); white-space: pre-wrap; }
+  .status.error { color: var(--danger); }
+  .status.ok { color: var(--ok); }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .editor {
+    margin-top: 14px; padding: 14px; border: 1px solid var(--border);
+    border-radius: 8px; background: #fbfcfd;
+  }
+  .editor.empty { color: var(--muted); font-size: 12.5px; }
+  a.download-link {
+    display: inline-block; margin-top: 10px; padding: 8px 16px;
+    border-radius: 6px; background: var(--ok); color: #fff;
+    text-decoration: none; font-size: 13px;
+  }
+  #logBox {
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 11.5px; background: #0f1115; color: #d7dbe0;
+    border-radius: 8px; padding: 10px 12px; max-height: 170px;
+    overflow-y: auto; white-space: pre-wrap;
+  }
+  .limitations { font-size: 12.5px; color: var(--muted); }
+  .empty-msg { color: var(--muted); font-size: 12.5px; padding: 10px 0; }
+  /* Focal-point picker: an editor-only overlay, never part of the render path. */
+  .focal-wrap { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
+  .focal-stage {
+    position: relative;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    background: #000;
+    cursor: crosshair;
+    touch-action: none;
+    max-width: 100%;
+  }
+  .focal-canvas { display: block; width: 100%; height: 100%; }
+  .focal-marker {
+    position: absolute;
+    width: 26px; height: 26px;
+    margin-left: -13px; margin-top: -13px;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px rgba(0,0,0,0.55), inset 0 0 0 1px rgba(0,0,0,0.55);
+    pointer-events: none;
+  }
+  .focal-marker::before, .focal-marker::after {
+    content: ''; position: absolute; background: #fff;
+    box-shadow: 0 0 2px rgba(0,0,0,0.8);
+  }
+  .focal-marker::before { left: 50%; top: -9px; width: 2px; height: 40px; margin-left: -1px; }
+  .focal-marker::after { top: 50%; left: -9px; height: 2px; width: 40px; margin-top: -1px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>Video Effects Lab</h1>
+  <p class="subtitle">Deterministic, frame-accurate visual effects for short clips. Runs entirely in this browser tab; your source file is never modified.</p>
+
+  <!-- ================= 1. VIDEO ================= -->
+  <section class="card">
+    <h2><span class="num">1</span>Video</h2>
+    <div class="row">
+      <div class="field">
+        <label for="fileInput">Select a local video file (WebM recommended)</label>
+        <input type="file" id="fileInput" accept="video/*">
+      </div>
+    </div>
+    <p class="hint" id="inputHint">No file loaded yet.</p>
+    <table class="meta" style="margin-top:12px;">
+      <tr><td class="k">File name</td><td id="infoName">&mdash;</td></tr>
+      <tr><td class="k">File type</td><td id="infoType">&mdash;</td></tr>
+      <tr><td class="k">Source duration</td><td id="infoDuration">&mdash;</td></tr>
+      <tr><td class="k">Dimensions</td><td id="infoDimensions">&mdash;</td></tr>
+      <tr><td class="k">Detected frame rate</td><td id="infoFps">&mdash;</td></tr>
+      <tr><td class="k">Output frame rate used</td><td>
+        <input type="number" id="outputFpsInput" min="1" max="120" step="1" value="30" style="width:70px;"> fps
+        <span class="hint" style="margin:0;">(drives the deterministic output frame grid)</span>
+      </td></tr>
+      <tr><td class="k">Output duration</td><td id="infoOutputDuration">&mdash;</td></tr>
+    </table>
+  </section>
+
+  <!-- ================= 2. EFFECTS ================= -->
+  <section class="card">
+    <h2><span class="num">2</span>Effects</h2>
+    <div class="row">
+      <div class="field">
+        <label for="addEffectType">Effect type</label>
+        <select id="addEffectType"></select>
+      </div>
+      <button id="addEffectBtn" disabled>Add Effect</button>
+      <span class="hint" style="margin:0;">New effects start at the original preview's current position, with sensible defaults.</span>
+    </div>
+
+    <table class="fxlist" style="margin-top:14px;">
+      <thead>
+        <tr>
+          <th style="width:34px;">On</th>
+          <th>Effect</th>
+          <th style="width:150px;">Window (source time)</th>
+          <th>Settings</th>
+          <th style="width:80px;"></th>
+        </tr>
+      </thead>
+      <tbody id="effectListBody"></tbody>
+    </table>
+    <div id="effectListEmpty" class="empty-msg">No effects yet. Add one above &mdash; with no effects, export simply re-encodes the source.</div>
+
+    <div class="editor empty" id="effectEditor">Select an effect in the list to edit it.</div>
+    <p class="hint">All effect times are in <strong>source video time</strong> (the timeline of your original clip), so they stay anchored to the content even when a Speed Ramp changes the output length.</p>
+  </section>
+
+  <!-- ================= 3. HOOK OVERLAY ================= -->
+  <section class="card">
+    <h2><span class="num">3</span>Hook Overlay</h2>
+    <div class="checkbox-row" style="margin-bottom:10px;">
+      <input type="checkbox" id="hookEnabled">
+      <label for="hookEnabled">Burn a hook into the start of the video</label>
+    </div>
+    <div class="row">
+      <div class="field" style="flex:1 1 320px;">
+        <label for="hookText">Hook text</label>
+        <input type="text" id="hookText" maxlength="120" placeholder="He sacrificed the queen." style="width:100%;">
+      </div>
+      <div class="field">
+        <label for="hookDuration">Duration (s)</label>
+        <input type="number" id="hookDuration" min="0.1" max="10" step="0.1" value="1.2">
+      </div>
+      <div class="field">
+        <label for="hookFontPct">Font size (% of frame)</label>
+        <input type="number" id="hookFontPct" min="2" max="25" step="0.5" value="9">
+      </div>
+    </div>
+    <p class="hint" id="hookHint"></p>
+  </section>
+
+  <!-- ================= 3. PREVIEW ================= -->
+  <section class="card">
+    <h2><span class="num">4</span>Preview</h2>
+    <div class="videos">
+      <div class="video-block">
+        <h3>Original</h3>
+        <video id="sourceVideo" controls playsinline></video>
+      </div>
+      <div class="video-block">
+        <h3>Edited</h3>
+        <video id="processedVideo" controls playsinline></video>
+        <p class="hint" id="processedHint">Not generated yet. Use "Generate Preview".</p>
+      </div>
+    </div>
+    <div class="row" style="margin-top:12px;">
+      <button id="previewBtn" disabled>Generate Preview</button>
+      <button id="downloadPreviewBtn" class="secondary" disabled>Download WebM</button>
+      <span class="hint" style="margin:0;">Generate Preview renders the finished video. What you watch above is the file you download — Export uses the same render too.</span>
+    </div>
+    <p class="hint" id="previewStaleHint" style="display:none;"></p>
+    <div class="progress-wrap" id="previewProgressWrap" style="display:none;">
+      <div class="progress-bar" id="previewProgressBar"></div>
+    </div>
+    <div class="status" id="previewStatus"></div>
+  </section>
+
+  <!-- ================= 4. EXPORT ================= -->
+  <section class="card">
+    <h2><span class="num">5</span>Export</h2>
+    <div class="row">
+      <button id="exportBtn" disabled>Export as WebM</button>
+    </div>
+    <div class="progress-wrap" id="exportProgressWrap" style="display:none;">
+      <div class="progress-bar" id="exportProgressBar"></div>
+    </div>
+    <div class="status" id="exportStatus"></div>
+    <div id="downloadArea"></div>
+    <table class="meta" id="outputInfoTable" style="margin-top:12px; display:none;">
+      <tr><td class="k">Output resolution</td><td id="outResolution">&mdash;</td></tr>
+      <tr><td class="k">Output duration</td><td id="outDuration">&mdash;</td></tr>
+      <tr><td class="k">Output frames</td><td id="outFrames">&mdash;</td></tr>
+      <tr><td class="k">File size</td><td id="outSize">&mdash;</td></tr>
+      <tr><td class="k">Render time</td><td id="outRenderTime">&mdash;</td></tr>
+    </table>
+    <p class="limitations" style="margin-top:14px;">
+      <strong>Known limitations:</strong> Audio is not preserved in the exported file (video-only WebM/VP8 track).
+      Frame rate is detected by sampling playback and rounded to a whole number for the output frame grid, so it may
+      not exactly equal a source's true encoded rate (especially for variable-frame-rate sources).
+      Requires a Chromium-based browser with WebCodecs (VideoEncoder) support.
+    </p>
+  </section>
+
+  <section class="card">
+    <h2>Log</h2>
+    <div id="logBox"></div>
+  </section>
+</div>
+
+<script>
+'use strict';
+
+/* =========================================================================
+   MODULE: Logging / UI status helpers  (wall-clock time is used ONLY here,
+   for human-facing messages -- never to drive effect state)
+   ========================================================================= */
+const Log = (() => {
+  const box = document.getElementById('logBox');
+  function line(msg, level) {
+    const t = new Date().toISOString().split('T')[1].replace('Z', '');
+    const el = document.createElement('div');
+    el.textContent = '[' + t + '] ' + msg;
+    if (level === 'error') el.style.color = '#ff6b6b';
+    if (level === 'warn') el.style.color = '#f5c451';
+    box.appendChild(el);
+    box.scrollTop = box.scrollHeight;
+  }
+  return {
+    info: (m) => line(m, 'info'),
+    warn: (m) => line(m, 'warn'),
+    error: (m) => line(m, 'error'),
+  };
+})();
+
+function setStatus(elId, text, kind) {
+  const el = document.getElementById(elId);
+  el.textContent = text || '';
+  el.className = 'status' + (kind ? ' ' + kind : '');
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+}
+
+/* =========================================================================
+   MODULE: Binary / EBML writing utilities  (unchanged foundation)
+   ========================================================================= */
+const EBML = (() => {
+  function concatBytes(chunks) {
+    let total = 0;
+    for (const c of chunks) total += c.length;
+    const out = new Uint8Array(total);
+    let offset = 0;
+    for (const c of chunks) { out.set(c, offset); offset += c.length; }
+    return out;
+  }
+
+  // Minimal-length EBML variable-length integer WITH the length-marker bit set.
+  function vintEncode(value) {
+    let length = 1;
+    while (length < 8 && value > (Math.pow(2, 7 * length) - 2)) length++;
+    const bytes = new Uint8Array(length);
+    let v = value;
+    for (let i = length - 1; i >= 0; i--) {
+      bytes[i] = v & 0xff;
+      v = Math.floor(v / 256);
+    }
+    bytes[0] |= (1 << (8 - length));
+    return bytes;
+  }
+
+  const UNKNOWN_SIZE = new Uint8Array([0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]);
+
+  function uintBytes(value) {
+    if (value <= 0) return new Uint8Array([0]);
+    const bytes = [];
+    let v = Math.round(value);
+    while (v > 0) { bytes.unshift(v & 0xff); v = Math.floor(v / 256); }
+    return new Uint8Array(bytes);
+  }
+
+  function int16Bytes(value) {
+    const buf = new ArrayBuffer(2);
+    new DataView(buf).setInt16(0, value, false);
+    return new Uint8Array(buf);
+  }
+
+  function floatBytes(value) {
+    const buf = new ArrayBuffer(8);
+    new DataView(buf).setFloat64(0, value, false);
+    return new Uint8Array(buf);
+  }
+
+  function stringBytes(str) { return new TextEncoder().encode(str); }
+
+  function element(idBytes, contentBytes) {
+    return concatBytes([idBytes, vintEncode(contentBytes.length), contentBytes]);
+  }
+
+  const ID = {
+    EBML: new Uint8Array([0x1a, 0x45, 0xdf, 0xa3]),
+    DocType: new Uint8Array([0x42, 0x82]),
+    DocTypeVersion: new Uint8Array([0x42, 0x87]),
+    DocTypeReadVersion: new Uint8Array([0x42, 0x85]),
+    EBMLVersion: new Uint8Array([0x42, 0x86]),
+    EBMLReadVersion: new Uint8Array([0x42, 0xf7]),
+    EBMLMaxIDLength: new Uint8Array([0x42, 0xf2]),
+    EBMLMaxSizeLength: new Uint8Array([0x42, 0xf3]),
+    Segment: new Uint8Array([0x18, 0x53, 0x80, 0x67]),
+    Info: new Uint8Array([0x15, 0x49, 0xa9, 0x66]),
+    TimecodeScale: new Uint8Array([0x2a, 0xd7, 0xb1]),
+    Duration: new Uint8Array([0x44, 0x89]),
+    MuxingApp: new Uint8Array([0x4d, 0x80]),
+    WritingApp: new Uint8Array([0x57, 0x41]),
+    Tracks: new Uint8Array([0x16, 0x54, 0xae, 0x6b]),
+    TrackEntry: new Uint8Array([0xae]),
+    TrackNumber: new Uint8Array([0xd7]),
+    TrackUID: new Uint8Array([0x73, 0xc5]),
+    TrackType: new Uint8Array([0x83]),
+    CodecID: new Uint8Array([0x86]),
+    Video: new Uint8Array([0xe0]),
+    PixelWidth: new Uint8Array([0xb0]),
+    PixelHeight: new Uint8Array([0xba]),
+    Cluster: new Uint8Array([0x1f, 0x43, 0xb6, 0x75]),
+    Timecode: new Uint8Array([0xe7]),
+    SimpleBlock: new Uint8Array([0xa3]),
+  };
+
+  return { concatBytes, vintEncode, UNKNOWN_SIZE, uintBytes, int16Bytes, floatBytes, stringBytes, element, ID };
+})();
+
+/* =========================================================================
+   MODULE: WebM muxer (video-only, VP8, streamed Segment/Cluster/SimpleBlock)
+   Unchanged foundation. Audio is not muxed -- see reported limitations.
+   ========================================================================= */
+class WebMMuxer {
+  constructor({ width, height, codecId, durationMs }) {
+    this.width = width;
+    this.height = height;
+    this.codecId = codecId;
+    this.trackNumber = 1;
+    this.chunks = [];
+    this.currentClusterTimecode = null;
+    this.currentClusterFrames = [];
+    this._writeHeader(durationMs);
+  }
+
+  _writeHeader(durationMs) {
+    const E = EBML;
+    const ebmlHeaderContent = E.concatBytes([
+      E.element(E.ID.DocType, E.stringBytes('webm')),
+      E.element(E.ID.DocTypeVersion, E.uintBytes(4)),
+      E.element(E.ID.DocTypeReadVersion, E.uintBytes(2)),
+      E.element(E.ID.EBMLVersion, E.uintBytes(1)),
+      E.element(E.ID.EBMLReadVersion, E.uintBytes(1)),
+      E.element(E.ID.EBMLMaxIDLength, E.uintBytes(4)),
+      E.element(E.ID.EBMLMaxSizeLength, E.uintBytes(8)),
+    ]);
+    this.chunks.push(E.element(E.ID.EBML, ebmlHeaderContent));
+    this.chunks.push(E.concatBytes([E.ID.Segment, E.UNKNOWN_SIZE]));
+
+    const infoContent = E.concatBytes([
+      E.element(E.ID.TimecodeScale, E.uintBytes(1000000)), // 1 tick = 1 ms
+      E.element(E.ID.Duration, E.floatBytes(durationMs)),
+      E.element(E.ID.MuxingApp, E.stringBytes('VideoEffectsLab')),
+      E.element(E.ID.WritingApp, E.stringBytes('VideoEffectsLab')),
+    ]);
+    this.chunks.push(E.element(E.ID.Info, infoContent));
+
+    const videoContent = E.concatBytes([
+      E.element(E.ID.PixelWidth, E.uintBytes(this.width)),
+      E.element(E.ID.PixelHeight, E.uintBytes(this.height)),
+    ]);
+    const trackEntryContent = E.concatBytes([
+      E.element(E.ID.TrackNumber, E.uintBytes(this.trackNumber)),
+      E.element(E.ID.TrackUID, E.uintBytes(this.trackNumber)),
+      E.element(E.ID.TrackType, E.uintBytes(1)),
+      E.element(E.ID.CodecID, E.stringBytes(this.codecId)),
+      E.element(E.ID.Video, videoContent),
+    ]);
+    this.chunks.push(E.element(E.ID.Tracks, E.element(E.ID.TrackEntry, trackEntryContent)));
+  }
+
+  addFrame(dataBytes, timestampUs, isKeyframe) {
+    const timecodeMs = Math.round(timestampUs / 1000);
+    if (this.currentClusterTimecode === null) {
+      this._startCluster(timecodeMs);
+    } else {
+      const rel = timecodeMs - this.currentClusterTimecode;
+      if (isKeyframe || rel > 30000) {
+        this._flushCluster();
+        this._startCluster(timecodeMs);
+      }
+    }
+    const rel = timecodeMs - this.currentClusterTimecode;
+    this.currentClusterFrames.push({ rel, isKeyframe, data: dataBytes });
+  }
+
+  _startCluster(timecodeMs) {
+    this.currentClusterTimecode = timecodeMs;
+    this.currentClusterFrames = [];
+  }
+
+  _flushCluster() {
+    if (this.currentClusterTimecode === null || this.currentClusterFrames.length === 0) return;
+    const E = EBML;
+    const pieces = [E.element(E.ID.Timecode, E.uintBytes(this.currentClusterTimecode))];
+    for (const f of this.currentClusterFrames) {
+      const blockContent = E.concatBytes([
+        E.vintEncode(this.trackNumber),
+        E.int16Bytes(f.rel),
+        new Uint8Array([f.isKeyframe ? 0x80 : 0x00]),
+        f.data,
+      ]);
+      pieces.push(E.element(E.ID.SimpleBlock, blockContent));
+    }
+    this.chunks.push(E.element(E.ID.Cluster, E.concatBytes(pieces)));
+    this.currentClusterTimecode = null;
+    this.currentClusterFrames = [];
+  }
+
+  finalize() {
+    this._flushCluster();
+    return new Blob(this.chunks, { type: 'video/webm' });
+  }
+}
+
+/* =========================================================================
+   MODULE: Shared deterministic math
+   Every function here is a pure function of (time, parameters).
+   No Date.now(), no performance.now(), no random(), no rAF.
+   ========================================================================= */
+const M = {
+  clamp(x, lo, hi) { return x < lo ? lo : (x > hi ? hi : x); },
+  smoothstep(x) { x = M.clamp(x, 0, 1); return x * x * (3 - 2 * x); },
+  smootherstep(x) { x = M.clamp(x, 0, 1); return x * x * x * (x * (x * 6 - 15) + 10); },
+
+  // Shared 0 -> 1 -> 0 envelope with capped attack/release ramps.
+  // Returns exactly 0 at and outside the window boundaries.
+  envelope(t, start, duration, maxRamp) {
+    if (!(duration > 0)) return 0;
+    const end = start + duration;
+    if (t <= start || t >= end) return 0;
+    const ramp = Math.min(duration / 2, maxRamp === undefined ? 0.15 : maxRamp);
+    if (ramp <= 0) return 1;
+    const tIn = t - start;
+    const tOut = end - t;
+    if (tIn < ramp) return M.smoothstep(tIn / ramp);
+    if (tOut < ramp) return M.smoothstep(tOut / ramp);
+    return 1;
+  },
+
+  // Normalized progress through an effect window, or -1 when outside it.
+  progress(t, start, duration) {
+    if (!(duration > 0)) return -1;
+    if (t <= start || t >= start + duration) return -1;
+    return (t - start) / duration;
+  },
+};
+
+/* =========================================================================
+   MODULE: Effect type registry
+   Single source of truth for UI controls, defaults and parameter values.
+   Adding a future effect means adding one entry here plus one evaluator.
+   ========================================================================= */
+const SHAKE_INTENSITY = {
+  low: { ampPct: 0.012, rotDeg: 0.30 },
+  medium: { ampPct: 0.022, rotDeg: 0.60 },
+  high: { ampPct: 0.035, rotDeg: 1.00 },
+};
+const SHAKE_FREQUENCY_HZ = { low: 5, medium: 9, high: 14 };
+const PUNCH_ZOOM_AMOUNT = { low: 1.04, medium: 1.08, high: 1.14 };
+const SMOOTH_ZOOM_AMOUNT = { low: 1.05, medium: 1.10, high: 1.18 };
+const FLASH_ALPHA = { low: 0.25, medium: 0.45, high: 0.70 };
+const VIGNETTE_ALPHA = { low: 0.25, medium: 0.40, high: 0.55 };
+// Motion blur tap weights, newest frame first. More/flatter taps = stronger trail.
+const MOTION_BLUR_WEIGHTS = {
+  low: [0.70, 0.30],
+  medium: [0.50, 0.30, 0.20],
+  high: [0.38, 0.24, 0.17, 0.12, 0.09],
+};
+
+// --- Phase 3 effect constants ---
+const DUTCH_TILT_MAX_DEG = 6;          // cinematic emphasis, deliberately not a social-media spin
+const CHROMA_AMOUNT = { low: 0.0015, medium: 0.0030, high: 0.0060 };   // channel split, fraction of width
+const RADIAL_AMOUNT = { low: 0.020, medium: 0.045, high: 0.080 };      // radial extent of the streaks
+const RADIAL_TAPS = { low: 5, medium: 7, high: 10 };
+const DIR_BLUR_AMOUNT = { low: 0.004, medium: 0.008, high: 0.016 };    // half-length, fraction of width
+const DIR_BLUR_TAPS = { low: 5, medium: 5, high: 7 };
+const GLITCH_INTENSITY = {
+  low: { slices: 3, sliceH: 0.04, shift: 0.010, rgb: 0.0015, scan: 0.05 },
+  medium: { slices: 5, sliceH: 0.06, shift: 0.022, rgb: 0.0030, scan: 0.09 },
+  high: { slices: 8, sliceH: 0.09, shift: 0.040, rgb: 0.0055, scan: 0.14 },
+};
+const GHOST_FADE = { low: 0.22, medium: 0.36, high: 0.50 };            // weight of each successive echo
+const SHARPEN_AMOUNT = { low: 0.25, medium: 0.50, high: 0.90 };
+
+// --- Group 1 effect constants ---
+// Impact Warp: how far the centre is magnified. The inverse map only ever
+// samples INSIDE the source radius, so a bulge can never pull in empty pixels.
+const WARP_AMOUNT = { low: 0.10, medium: 0.20, high: 0.35 };
+const BLOOM_STRENGTH = { low: 0.30, medium: 0.55, high: 0.85 };
+const BLOOM_THRESHOLD = 0.62;          // luma above which a pixel starts to bloom
+const BLOOM_DOWNSCALE = 4;             // bright-pass runs at 1/4 size, then is blurred up
+const FLARE_STRENGTH = { low: 0.30, medium: 0.50, high: 0.75 };
+// Whip Pan travel as a fraction of the panned axis. Kept modest on purpose:
+// translating the frame forces a matching overscan zoom to stay border-safe.
+const WHIP_DISTANCE = { low: 0.08, medium: 0.14, high: 0.22 };
+// Directional blur per unit of pan velocity. A whip pan's signature look IS the
+// smear, so the gain is set to give a clearly visible streak at the fastest point
+// of the sweep (~19px at 720p on `high`), capped so a very short window -- which
+// multiplies velocity -- cannot turn the frame to mush.
+const WHIP_BLUR_GAIN = 0.35;
+const WHIP_BLUR_MAX_FRAC = 0.03;       // hard ceiling as a fraction of the short side
+const CRASH_ZOOM_AMOUNT = { low: 1.25, medium: 1.45, high: 1.80 };
+const CRASH_STREAK_GAIN = 0.020;       // radial streak per unit of zoom velocity
+const LIGHT_WIPE_INTENSITY = { low: 0.35, medium: 0.60, high: 0.90 };
+const STROBE_ALPHA = { low: 0.30, medium: 0.50, high: 0.75 };
+const VELOCITY_DT = 0.005;             // fixed step for deterministic finite differences
+
+/* ---------------- Group 2 constants ---------------- */
+// Wave amplitude as a fraction of the SHORT side, so one setting looks the same
+// at 16:9, 9:16 and 1:1. The renderer tapers this to zero at the frame edge, so
+// the wave can never sample past the border (proof in _displace).
+const WAVE_AMPLITUDE = { low: 0.006, medium: 0.013, high: 0.022 };
+const WAVE_SPEED = { low: 0.7, medium: 1.5, high: 2.8 };   // wave cycles per second
+// Fisheye curvature. f(rn) = tan(rn*atan(K)) / (K*rn) is <= 1 for every rn in
+// [0,1] and exactly 1 at rn = 1, so the corner maps to itself: the centre is
+// magnified, nothing is cropped and no sample ever leaves the frame.
+const FISHEYE_K = { low: 0.60, medium: 1.10, high: 1.80 };
+const FISHEYE_LUT_N = 1024;            // radial profile samples, rebuilt only when K changes
+// Depth of field blur radius as a fraction of the short side, turned into a
+// downscale divisor for the reuse of the bloom pyramid technique.
+const DOF_BLUR = { low: 0.008, medium: 0.017, high: 0.032 };
+const DOF_DIV_MAX = 24;
+// The focus region is fully sharp out to the chosen radius and reaches full blur
+// at DOF_FALLOFF times it, along a smoothstep so the change per unit of radius
+// eases in and out instead of arriving as a visible ring.
+const DOF_FALLOFF = 2.2;
+const DOF_FALLOFF_STOPS = 8;
+
+// Shared sine table for the per-pixel wave field. Math.sin() three times per
+// pixel dominates the cost of a full-frame displacement; the table is a pure
+// function of its index, so the output stays bit-for-bit deterministic.
+const SIN_LUT_SIZE = 4096;
+const SIN_LUT_MASK = SIN_LUT_SIZE - 1;
+const SIN_LUT_SCALE = SIN_LUT_SIZE / (Math.PI * 2);
+const SIN_LUT = (() => {
+  const t = new Float64Array(SIN_LUT_SIZE);
+  for (let i = 0; i < SIN_LUT_SIZE; i++) t[i] = Math.sin((i / SIN_LUT_SIZE) * Math.PI * 2);
+  return t;
+})();
+
+const LEVEL_OPTIONS = [['low', 'Low'], ['medium', 'Medium'], ['high', 'High']];
+const DIRECTION_OPTIONS = [['left', 'Left'], ['right', 'Right'], ['up', 'Up'], ['down', 'Down']];
+
+/* Deterministic integer hash -> used by Glitch Burst.
+   Pure arithmetic on frame index / seed: never Math.random(), never a clock,
+   so every run reproduces the same pattern exactly. */
+function hash3(a, b, c) {
+  let x = Math.imul(a | 0, 374761393) + Math.imul(b | 0, 668265263) + Math.imul(c | 0, 2246822519);
+  x = Math.imul(x ^ (x >>> 13), 1274126177);
+  x ^= x >>> 16;
+  return x >>> 0;
+}
+const rand01 = (h) => h / 4294967296;
+
+/* Exact scale needed for a W x H frame, rotated by `rot` and shifted by
+   (dx, dy) about its centre, to still cover the whole canvas.
+   Each canvas corner, mapped into image space, must land inside the image:
+   the worst-case corner gives A*|cos| + B*|sin| <= s*W/2 and
+   A*|sin| + B*|cos| <= s*H/2, with A = W/2 + |dx|, B = H/2 + |dy|.
+   Returns exactly 1 when there is no rotation and no shift. */
+function coverScaleFor(rot, dx, dy, width, height) {
+  const c = Math.abs(Math.cos(rot));
+  const s = Math.abs(Math.sin(rot));
+  const A = width / 2 + Math.abs(dx);
+  const B = height / 2 + Math.abs(dy);
+  return Math.max((A * c + B * s) / (width / 2), (A * s + B * c) / (height / 2));
+}
+
+const EFFECT_TYPES = {
+  shake: {
+    label: 'Screen Shake',
+    defaultDuration: 1.0,
+    defaults: { intensity: 'medium', frequency: 'medium' },
+    params: [
+      { key: 'intensity', label: 'Intensity', options: LEVEL_OPTIONS },
+      { key: 'frequency', label: 'Frequency', options: LEVEL_OPTIONS },
+    ],
+    hint: 'Deterministic 2D shake with smooth attack/release. A small overscan zoom prevents black corners.',
+  },
+  punchZoom: {
+    label: 'Punch Zoom',
+    defaultDuration: 0.32,
+    defaults: { amount: 'medium' },
+    params: [
+      { key: 'amount', label: 'Amount', options: [['low', 'Low (1.04x)'], ['medium', 'Medium (1.08x)'], ['high', 'High (1.14x)']] },
+    ],
+    hint: 'Fast punch in, brief hold, smooth return. Returns to exactly 1.0x outside the window. Zoom centre is the frame centre.',
+  },
+  smoothZoom: {
+    label: 'Smooth Zoom',
+    defaultDuration: 2.0,
+    defaults: { amount: 'medium', direction: 'in' },
+    params: [
+      { key: 'amount', label: 'Amount', options: [['low', 'Low (1.05x)'], ['medium', 'Medium (1.10x)'], ['high', 'High (1.18x)']] },
+      { key: 'direction', label: 'Direction', options: [['in', 'In'], ['out', 'Out']] },
+    ],
+    hint: 'Slow cinematic push. "In" eases 1.0x to the chosen scale; "Out" starts at the chosen scale and eases back to 1.0x, ' +
+          'so Out begins with a visible jump to the zoomed scale unless it starts at 0s.',
+  },
+  speedRamp: {
+    label: 'Speed Ramp',
+    defaultDuration: 1.0,
+    defaults: { speed: '2' },
+    params: [
+      { key: 'speed', label: 'Speed', options: [['0.5', '0.5x'], ['0.75', '0.75x'], ['1.5', '1.5x'], ['2', '2x'], ['3', '3x'], ['4', '4x']] },
+    ],
+    hint: 'Retimes this source interval. Everything outside stays 1x, so the output length changes. Output frame timestamps stay strictly monotonic.',
+  },
+  flash: {
+    label: 'Flash',
+    defaultDuration: 0.08,
+    defaults: { intensity: 'medium' },
+    params: [{ key: 'intensity', label: 'Intensity', options: LEVEL_OPTIONS }],
+    hint: 'Short bright impact with a fast rise and smooth decay. Never reaches pure white.',
+  },
+  motionBlur: {
+    label: 'Motion Blur',
+    defaultDuration: 0.5,
+    defaults: { intensity: 'medium' },
+    params: [{ key: 'intensity', label: 'Intensity', options: LEVEL_OPTIONS }],
+    hint: 'Blends the preceding processed frames into a shutter-style trail. Also blurs shake/zoom motion. Deterministic frame history, no wall-clock input.',
+  },
+  vignette: {
+    label: 'Impact Vignette',
+    defaultDuration: 0.8,
+    defaults: { intensity: 'low' },
+    params: [{ key: 'intensity', label: 'Intensity', options: LEVEL_OPTIONS }],
+    hint: 'Subtly darkens the edges to emphasise a moment. Fully removed outside the window.',
+  },
+
+  /* ---------------- Phase 3 ---------------- */
+  dutchTilt: {
+    label: 'Dutch Tilt',
+    defaultDuration: 1.2,
+    defaults: { direction: 'cw', degrees: 3 },
+    params: [
+      { key: 'direction', label: 'Direction', options: [['cw', 'Clockwise'], ['ccw', 'Counter-clockwise']] },
+      { key: 'degrees', label: 'Degrees', type: 'number', min: 0.5, max: DUTCH_TILT_MAX_DEG, step: 0.5 },
+    ],
+    hint: 'Eases into a tilt, holds, then returns to exactly 0°. Overscan is computed from the exact ' +
+          'rotated-rectangle coverage bound, so corners can never go black. Capped at ' + DUTCH_TILT_MAX_DEG +
+          '° — this is cinematic emphasis, not a spin.',
+  },
+  chromaAberration: {
+    label: 'Chromatic Aberration',
+    defaultDuration: 0.25,
+    defaults: { amount: 'medium', angle: 0 },
+    params: [
+      { key: 'amount', label: 'Amount', options: LEVEL_OPTIONS },
+      { key: 'angle', label: 'Angle (°)', type: 'number', min: 0, max: 360, step: 15 },
+    ],
+    hint: 'Splits the red and blue channels apart along the angle and eases back to none. ' +
+          'Best kept short — check, capture, sacrifice, mate.',
+  },
+  radialBlur: {
+    label: 'Radial Zoom Blur',
+    defaultDuration: 0.4,
+    focal: true,
+    defaults: { amount: 'medium', direction: 'in', focusX: 0.5, focusY: 0.5 },
+    params: [
+      { key: 'amount', label: 'Amount', options: LEVEL_OPTIONS },
+      { key: 'direction', label: 'Direction', options: [['in', 'Zoom in'], ['out', 'Zoom out'], ['both', 'Both']] },
+      { key: 'focusX', label: 'Focus X', type: 'number', min: 0, max: 1, step: 0.01 },
+      { key: 'focusY', label: 'Focus Y', type: 'number', min: 0, max: 1, step: 0.01 },
+    ],
+    hint: 'Streaks radiate from a focal point you drag on the preview below — put it on the mating square, ' +
+          'the king, or the captured piece. Every blur layer is scaled up about that point, so no pixel is ever left empty.',
+  },
+  directionalBlur: {
+    label: 'Directional Blur',
+    defaultDuration: 0.4,
+    defaults: { amount: 'medium', angle: 0 },
+    params: [
+      { key: 'amount', label: 'Amount', options: LEVEL_OPTIONS },
+      { key: 'angle', label: 'Angle (°)', type: 'number', min: 0, max: 360, step: 15 },
+    ],
+    hint: 'Smears along one axis — 0° horizontal for a rook slide, 90° vertical, or match a knight jump. ' +
+          'Stacks with Motion Blur rather than replacing it.',
+  },
+  freeze: {
+    label: 'Freeze / Impact Hold',
+    defaultDuration: 0.5,
+    defaults: {},
+    params: [],
+    hint: 'Holds the frame at Start for Duration seconds of extra output time, then resumes exactly where it left off. ' +
+          'Because effect windows are source times, any effect overlapping the freeze point holds with it — ' +
+          'place a flash or shake just before the freeze, not across it.',
+  },
+  glitchBurst: {
+    label: 'Glitch Burst',
+    defaultDuration: 0.15,
+    defaults: { intensity: 'medium', seed: 1 },
+    params: [
+      { key: 'intensity', label: 'Intensity', options: LEVEL_OPTIONS },
+      { key: 'seed', label: 'Seed', type: 'number', min: 1, max: 999, step: 1 },
+    ],
+    hint: 'Torn slices, scanlines and channel tearing for a few frames. The pattern comes from a hash of the ' +
+          'frame index and the seed, so it is identical on every render — change the seed to roll a different look.',
+  },
+  ghostTrail: {
+    label: 'Ghost / Echo Trail',
+    defaultDuration: 0.6,
+    defaults: { echoes: '3', spacing: 3, fade: 'medium' },
+    params: [
+      { key: 'echoes', label: 'Echoes', options: [['1', '1'], ['2', '2'], ['3', '3'], ['4', '4']] },
+      { key: 'spacing', label: 'Spacing (frames)', type: 'number', min: 1, max: 10, step: 1 },
+      { key: 'fade', label: 'Fade', options: LEVEL_OPTIONS },
+    ],
+    hint: 'Earlier rendered frames linger behind the action at decreasing opacity. Uses a bounded ring buffer ' +
+          'that starts empty on every render, so nothing leaks between exports.',
+  },
+  sharpenPunch: {
+    label: 'Sharpen Punch',
+    defaultDuration: 0.5,
+    defaults: { amount: 'low' },
+    params: [{ key: 'amount', label: 'Amount', options: LEVEL_OPTIONS }],
+    hint: 'A brief clarity lift on the board and pieces, eased in and out so nothing is permanently sharpened. ' +
+          'Keep it low — high can ring on compressed footage.',
+  },
+
+  /* ---------------- Group 1 ---------------- */
+  impactWarp: {
+    label: 'Impact Warp',
+    defaultDuration: 0.35,
+    focal: true,
+    defaults: { amount: 'medium', radius: 60, focusX: 0.5, focusY: 0.5 },
+    params: [
+      { key: 'amount', label: 'Amount', options: LEVEL_OPTIONS },
+      { key: 'radius', label: 'Radius (% of frame)', type: 'number', min: 20, max: 100, step: 5 },
+      { key: 'focusX', label: 'Focus X', type: 'number', min: 0, max: 1, step: 0.01 },
+      { key: 'focusY', label: 'Focus Y', type: 'number', min: 0, max: 1, step: 0.01 },
+    ],
+    hint: 'A shock bulges the picture outward from the point you drag below, then settles. ' +
+          'The lens map only ever samples inward, so it cannot pull in empty pixels — put it on the square that got hit.',
+  },
+  glowBloom: {
+    label: 'Glow / Bloom',
+    defaultDuration: 0.8,
+    defaults: { strength: 'medium' },
+    params: [{ key: 'strength', label: 'Strength', options: LEVEL_OPTIONS }],
+    hint: 'Bright areas bleed soft light. Only pixels above a fixed luminance threshold bloom, so the board keeps its ' +
+          'contrast instead of washing out. Runs before Flash so a flash never blooms into a white-out.',
+  },
+  lensFlare: {
+    label: 'Lens Flare',
+    defaultDuration: 0.5,
+    focal: true,
+    defaults: { strength: 'medium', focusX: 0.5, focusY: 0.35 },
+    params: [
+      { key: 'strength', label: 'Strength', options: LEVEL_OPTIONS },
+      { key: 'focusX', label: 'Focus X', type: 'number', min: 0, max: 1, step: 0.01 },
+      { key: 'focusY', label: 'Focus Y', type: 'number', min: 0, max: 1, step: 0.01 },
+    ],
+    hint: 'A restrained burst — core, streak and a few ghosts along the axis through centre. Drawn procedurally, ' +
+          'no stock artwork and nothing random. Drag the source below.',
+  },
+  whipPan: {
+    label: 'Whip Pan',
+    defaultDuration: 0.3,
+    defaults: { direction: 'left', distance: 'medium' },
+    params: [
+      { key: 'direction', label: 'Direction', options: DIRECTION_OPTIONS },
+      { key: 'distance', label: 'Distance', options: LEVEL_OPTIONS },
+    ],
+    hint: 'One decisive sweep out and back, with directional blur driven by the pan velocity rather than a fixed amount. ' +
+          'Translating the frame forces a matching overscan zoom to keep the edges covered, so bigger distances zoom in more.',
+  },
+  crashZoom: {
+    label: 'Crash Zoom',
+    defaultDuration: 0.5,
+    defaults: { amount: 'medium', mode: 'recover' },
+    params: [
+      { key: 'amount', label: 'Amount', options: [['low', 'Low (1.25x)'], ['medium', 'Medium (1.45x)'], ['high', 'High (1.80x)']] },
+      { key: 'mode', label: 'Mode', options: [['recover', 'Crash and recover'], ['hold', 'Crash and hold']] },
+    ],
+    hint: 'A violent arrival, not an emphasis beat: it slams in several times harder than Punch Zoom over a much shorter ' +
+          'attack and streaks radially while it travels. Use it to land on a moment or cut between two.',
+  },
+  lightWipe: {
+    label: 'Light Wipe',
+    defaultDuration: 0.6,
+    defaults: { direction: 'left', intensity: 'medium' },
+    params: [
+      { key: 'direction', label: 'Direction', options: DIRECTION_OPTIONS },
+      { key: 'intensity', label: 'Intensity', options: LEVEL_OPTIONS },
+    ],
+    hint: 'A band of light sweeps across and reveals the frame again. Additive, so it lifts the picture rather than ' +
+          'replacing its colour, and it leaves nothing behind once it has passed.',
+  },
+  strobe: {
+    label: 'Strobe / Multi-Flash',
+    defaultDuration: 0.5,
+    defaults: { pulses: '3', intensity: 'medium' },
+    params: [
+      { key: 'pulses', label: 'Pulses', options: [['2', '2'], ['3', '3'], ['4', '4'], ['5', '5']] },
+      { key: 'intensity', label: 'Intensity', options: LEVEL_OPTIONS },
+    ],
+    hint: 'Evenly spaced hits with real darkness between them — where Flash is one beat, this is a rhythm. ' +
+          'Pulse timing is fixed by the window, so it never changes the clip length.',
+  },
+
+  /* ---------------- Group 2 ---------------- */
+  waveWarp: {
+    label: 'Displacement / Wave Warp',
+    defaultDuration: 0.8,
+    defaults: { amount: 'medium', waves: 3, angle: 0, speed: 'medium' },
+    params: [
+      { key: 'amount', label: 'Amount', options: LEVEL_OPTIONS },
+      { key: 'waves', label: 'Waves across frame', type: 'number', min: 1, max: 8, step: 1 },
+      { key: 'angle', label: 'Angle (°)', type: 'number', min: 0, max: 360, step: 15 },
+      { key: 'speed', label: 'Speed', options: LEVEL_OPTIONS },
+    ],
+    hint: 'A travelling wave field ripples the picture — heat haze, a pressure wave off a slammed piece, water. ' +
+          'Not a lens bulge: the displacement runs across the frame along the angle you set, and it tapers to zero ' +
+          'at the edges so no border can ever open. Wavelength is measured on the short side, so it looks the same ' +
+          'in landscape and portrait.',
+  },
+  fisheye: {
+    label: 'Fisheye / Barrel Distortion',
+    defaultDuration: 1.0,
+    defaults: { strength: 'medium' },
+    params: [{ key: 'strength', label: 'Strength', options: LEVEL_OPTIONS }],
+    hint: 'Global lens curvature: straight board edges bow outward and the centre swells, held across the whole ' +
+          'window rather than punched at one point like Impact Warp. The corner maps exactly to itself, so the ' +
+          'frame is never cropped and no corner can go black.',
+  },
+  posterizeStep: {
+    label: 'Posterize / Temporal Step',
+    defaultDuration: 0.8,
+    defaults: { rate: '6' },
+    params: [
+      { key: 'rate', label: 'Stepped frames / s', options: [['2', '2'], ['3', '3'], ['4', '4'], ['6', '6'], ['8', '8'], ['12', '12']] },
+    ],
+    hint: 'Stop-motion cadence: the picture holds on one source frame, then jumps to the next, instead of moving ' +
+          'smoothly. Clip length is unchanged — this is stepped time, not slow motion. Because the held frame is ' +
+          'chosen before anything is drawn, every other effect steps with it, exactly as it would across a Freeze.',
+  },
+  focusBlur: {
+    label: 'Depth of Field / Focus Blur',
+    defaultDuration: 1.0,
+    focal: true,
+    defaults: { blur: 'medium', radius: 35, focusX: 0.5, focusY: 0.5 },
+    params: [
+      { key: 'blur', label: 'Blur', options: LEVEL_OPTIONS },
+      { key: 'radius', label: 'In-focus radius (% of frame)', type: 'number', min: 10, max: 80, step: 5 },
+      { key: 'focusX', label: 'Focus X', type: 'number', min: 0, max: 1, step: 0.01 },
+      { key: 'focusY', label: 'Focus Y', type: 'number', min: 0, max: 1, step: 0.01 },
+    ],
+    hint: 'Holds one part of the board sharp and lets the rest fall away, like opening the aperture. Drag the ' +
+          'focus point below onto the piece that matters. The falloff is a smooth gradient, not a cut-out circle.',
+  },
+  focusPull: {
+    label: 'Focus Pull',
+    defaultDuration: 1.2,
+    defaults: { blur: 'medium', radius: 30, fromX: 0.28, fromY: 0.5, toX: 0.72, toY: 0.5 },
+    params: [
+      { key: 'blur', label: 'Blur', options: LEVEL_OPTIONS },
+      { key: 'radius', label: 'In-focus radius (% of frame)', type: 'number', min: 10, max: 80, step: 5 },
+      { key: 'fromX', label: 'From X', type: 'number', min: 0, max: 1, step: 0.01 },
+      { key: 'fromY', label: 'From Y', type: 'number', min: 0, max: 1, step: 0.01 },
+      { key: 'toX', label: 'To X', type: 'number', min: 0, max: 1, step: 0.01 },
+      { key: 'toY', label: 'To Y', type: 'number', min: 0, max: 1, step: 0.01 },
+    ],
+    hint: 'The sharp region travels from one point to another while the window runs — rack focus from the piece ' +
+          'being moved to the king. Nothing pans or zooms; only what is in focus changes. Uses the same lens as ' +
+          'Depth of Field, so stacking both just takes the stronger blur.',
+  },
+};
+
+function effectLabel(type) {
+  return EFFECT_TYPES[type] ? EFFECT_TYPES[type].label : type;
+}
+
+function effectSummary(fx) {
+  const def = EFFECT_TYPES[fx.type];
+  if (!def) return '';
+  if (!def.params.length) return 'hold';
+  return def.params.map((p) => {
+    if (p.type === 'number') {
+      const v = Number(fx.params[p.key]);
+      const shown = isFinite(v) ? (Math.round(v * 100) / 100) : '?';
+      return p.label.replace(/\s*\(.*\)$/, '') + ' ' + shown;
+    }
+    const opt = p.options.find((o) => o[0] === String(fx.params[p.key]));
+    return (opt ? opt[1] : fx.params[p.key]);
+  }).join(' / ');
+}
+
+/* =========================================================================
+   MODULE: Per-effect evaluators (pure functions of source timestamp)
+   Each returns the effect's contribution at one instant. Adding an effect
+   later means adding an evaluator here and composing it in FrameState.
+   ========================================================================= */
+const EffectMath = {
+  // --- Screen Shake: deterministic fixed-phase sine stack, Phase 1 behaviour ---
+  shake(t, params, width, height) {
+    const env = M.envelope(t, params.start, params.duration, 0.15);
+    if (env <= 0) return null;
+    const cfg = SHAKE_INTENSITY[params.intensity] || SHAKE_INTENSITY.medium;
+    const freqHz = SHAKE_FREQUENCY_HZ[params.frequency] || SHAKE_FREQUENCY_HZ.medium;
+    const ampPx = cfg.ampPct * height;
+    const rotMaxRad = cfg.rotDeg * Math.PI / 180;
+
+    const ox = Math.sin(2 * Math.PI * freqHz * t + 0.7) * 0.6 +
+               Math.sin(2 * Math.PI * freqHz * 1.9 * t + 2.1) * 0.4;
+    const oy = Math.sin(2 * Math.PI * freqHz * 1.3 * t + 1.4) * 0.6 +
+               Math.sin(2 * Math.PI * freqHz * 2.3 * t + 4.2) * 0.4;
+    const orot = Math.sin(2 * Math.PI * freqHz * 0.8 * t + 3.3);
+
+    // Overscan margin needed so displacement + rotation can never expose an edge.
+    // Scaled by the same envelope as the motion itself, so coverage stays
+    // sufficient at every instant while the zoom enters and leaves smoothly.
+    const diag = Math.sqrt(width * width + height * height);
+    const rotDisp = (diag / 2) * Math.sin(rotMaxRad);
+    const margin = env * ((ampPx + rotDisp) * 1.15 + 2);
+
+    return {
+      dx: ox * ampPx * env,
+      dy: oy * ampPx * env,
+      rot: orot * rotMaxRad * env,
+      margin,
+    };
+  },
+
+  // --- Punch Zoom: fast attack, brief hold, smooth release; exactly 1.0x outside ---
+  punchZoom(t, params) {
+    const u = M.progress(t, params.start, params.duration);
+    if (u < 0) return 1;
+    const amount = PUNCH_ZOOM_AMOUNT[params.amount] || PUNCH_ZOOM_AMOUNT.medium;
+    const ATTACK = 0.20, HOLD_END = 0.40;
+    let curve;
+    if (u < ATTACK) curve = M.smoothstep(u / ATTACK);
+    else if (u < HOLD_END) curve = 1;
+    else curve = 1 - M.smoothstep((u - HOLD_END) / (1 - HOLD_END));
+    return 1 + (amount - 1) * curve;
+  },
+
+  // --- Smooth Zoom: eased push in or pull back; exactly 1.0x outside ---
+  smoothZoom(t, params) {
+    const u = M.progress(t, params.start, params.duration);
+    if (u < 0) return 1;
+    const amount = SMOOTH_ZOOM_AMOUNT[params.amount] || SMOOTH_ZOOM_AMOUNT.medium;
+    const e = M.smootherstep(u);
+    return params.direction === 'out'
+      ? 1 + (amount - 1) * (1 - e)
+      : 1 + (amount - 1) * e;
+  },
+
+  // --- Flash: fast rise, smooth decay, white overlay alpha ---
+  flash(t, params) {
+    const u = M.progress(t, params.start, params.duration);
+    if (u < 0) return 0;
+    const peak = FLASH_ALPHA[params.intensity] || FLASH_ALPHA.medium;
+    const ATTACK = 0.25;
+    const shape = u < ATTACK
+      ? M.smoothstep(u / ATTACK)
+      : 1 - M.smoothstep((u - ATTACK) / (1 - ATTACK));
+    return peak * shape;
+  },
+
+  // --- Impact Vignette: enveloped edge darkening alpha ---
+  vignette(t, params) {
+    const env = M.envelope(t, params.start, params.duration, 0.20);
+    if (env <= 0) return 0;
+    return (VIGNETTE_ALPHA[params.intensity] || VIGNETTE_ALPHA.medium) * env;
+  },
+
+  // --- Motion Blur: tap weights for the trailing frame history ---
+  // Returns weights (newest first) already blended toward "no blur" by the
+  // envelope, so the window edges are smooth and outside the window the
+  // newest frame keeps weight 1 (bit-identical passthrough).
+  motionBlur(t, params) {
+    const env = M.envelope(t, params.start, params.duration, 0.15);
+    if (env <= 0) return null;
+    const base = MOTION_BLUR_WEIGHTS[params.intensity] || MOTION_BLUR_WEIGHTS.medium;
+    const weights = base.map((w, i) => (i === 0 ? 1 - env * (1 - w) : env * w));
+    return weights;
+  },
+
+  maxBlurTaps(intensity) {
+    return (MOTION_BLUR_WEIGHTS[intensity] || MOTION_BLUR_WEIGHTS.medium).length;
+  },
+
+  /* ---------------- Phase 3 evaluators ---------------- */
+
+  // --- Dutch Tilt: ease in, hold, ease back to exactly 0 radians ---
+  dutchTilt(t, params) {
+    const u = M.progress(t, params.start, params.duration);
+    if (u < 0) return 0;
+    const deg = M.clamp(Number(params.degrees) || 0, 0, DUTCH_TILT_MAX_DEG);
+    const ATTACK = 0.25, HOLD_END = 0.75;
+    let curve;
+    if (u < ATTACK) curve = M.smoothstep(u / ATTACK);
+    else if (u < HOLD_END) curve = 1;
+    else curve = 1 - M.smoothstep((u - HOLD_END) / (1 - HOLD_END));
+    const sign = params.direction === 'ccw' ? -1 : 1;
+    return sign * deg * (Math.PI / 180) * curve;
+  },
+
+  // --- Chromatic aberration: opposing red/blue displacement along an angle ---
+  // `pad` is exactly the largest displacement, and every channel is drawn into a
+  // destination rect inflated by pad, so a shifted channel can never leave a gap.
+  chromaAberration(t, params, width) {
+    const env = M.envelope(t, params.start, params.duration, 0.12);
+    if (env <= 0) return null;
+    const mag = (CHROMA_AMOUNT[params.amount] || CHROMA_AMOUNT.medium) * width * env;
+    if (!(mag > 0)) return null;
+    const a = (Number(params.angle) || 0) * Math.PI / 180;
+    return { dx: Math.cos(a) * mag, dy: Math.sin(a) * mag };
+  },
+
+  // --- Radial zoom blur about a normalised focal point ---
+  // Every layer scale is >= 1, and scaling up about a point inside the frame
+  // always covers the canvas, so this effect cannot introduce empty pixels.
+  radialBlur(t, params) {
+    const env = M.envelope(t, params.start, params.duration, 0.12);
+    if (env <= 0) return null;
+    const amount = (RADIAL_AMOUNT[params.amount] || RADIAL_AMOUNT.medium) * env;
+    if (!(amount > 0)) return null;
+    const taps = RADIAL_TAPS[params.amount] || RADIAL_TAPS.medium;
+    const fx = M.clamp(Number(params.focusX), 0, 1);
+    const fy = M.clamp(Number(params.focusY), 0, 1);
+    const scales = [], weights = [];
+    for (let k = 0; k < taps; k++) {
+      const f = taps === 1 ? 0 : k / (taps - 1);
+      scales.push(1 + amount * f);
+      let w;
+      if (params.direction === 'out') w = f;
+      else if (params.direction === 'both') w = 1 - Math.abs(2 * f - 1);
+      else w = 1 - f;
+      weights.push(w + 0.15); // floor keeps every tap contributing to the streak
+    }
+    return { fx: isFinite(fx) ? fx : 0.5, fy: isFinite(fy) ? fy : 0.5, scales, weights };
+  },
+
+  // --- Directional blur: symmetric taps along an angle (box filter) ---
+  directionalBlur(t, params, width) {
+    const env = M.envelope(t, params.start, params.duration, 0.12);
+    if (env <= 0) return null;
+    const half = (DIR_BLUR_AMOUNT[params.amount] || DIR_BLUR_AMOUNT.medium) * width * env;
+    if (!(half > 0)) return null;
+    const taps = DIR_BLUR_TAPS[params.amount] || DIR_BLUR_TAPS.medium;
+    const a = (Number(params.angle) || 0) * Math.PI / 180;
+    const offsets = [], weights = [];
+    for (let k = 0; k < taps; k++) {
+      const f = taps === 1 ? 0 : (k / (taps - 1)) * 2 - 1;
+      offsets.push({ x: Math.cos(a) * half * f, y: Math.sin(a) * half * f });
+      weights.push(1);
+    }
+    return { offsets, weights, pad: half };
+  },
+
+  // --- Glitch burst: torn slices + scanlines, plus a channel-tear contribution ---
+  // Everything is derived from hash(frameIndex, seed, k): identical every run.
+  glitch(frameIndex, params, width, height, t) {
+    const env = M.envelope(t, params.start, params.duration, 0.05);
+    if (env <= 0) return null;
+    const cfg = GLITCH_INTENSITY[params.intensity] || GLITCH_INTENSITY.medium;
+    const seed = Math.round(Number(params.seed) || 1);
+    const slices = [];
+    for (let k = 0; k < cfg.slices; k++) {
+      const r1 = rand01(hash3(frameIndex, seed, k * 3 + 1));
+      const r2 = rand01(hash3(frameIndex, seed, k * 3 + 2));
+      const r3 = rand01(hash3(frameIndex, seed, k * 3 + 3));
+      slices.push({
+        y: Math.floor(r1 * height),
+        h: Math.max(2, Math.floor((0.015 + r2 * cfg.sliceH) * height)),
+        dx: (r3 * 2 - 1) * cfg.shift * width * env,
+      });
+    }
+    const ra = rand01(hash3(frameIndex, seed, 9001)) * Math.PI * 2;
+    const rmag = cfg.rgb * width * env;
+    return {
+      slices,
+      scan: cfg.scan * env,
+      scanOffset: hash3(frameIndex, seed, 9002) % 8,
+      chromaDx: Math.cos(ra) * rmag,
+      chromaDy: Math.sin(ra) * rmag,
+    };
+  },
+
+  // --- Ghost / echo trail: sparse taps into the rendered-frame history ---
+  ghostTrail(t, params) {
+    const env = M.envelope(t, params.start, params.duration, 0.12);
+    if (env <= 0) return null;
+    const echoes = M.clamp(Math.round(Number(params.echoes) || 3), 1, 4);
+    const spacing = M.clamp(Math.round(Number(params.spacing) || 3), 1, 10);
+    const fade = GHOST_FADE[params.fade] || GHOST_FADE.medium;
+    const taps = [{ index: 0, weight: 1 }];
+    let w = fade;
+    for (let k = 1; k <= echoes; k++) {
+      taps.push({ index: k * spacing, weight: w * env });
+      w *= fade;
+    }
+    return taps;
+  },
+
+  ghostDepth(params) {
+    const echoes = M.clamp(Math.round(Number(params.echoes) || 3), 1, 4);
+    const spacing = M.clamp(Math.round(Number(params.spacing) || 3), 1, 10);
+    return echoes * spacing + 1;
+  },
+
+  /* ---------------- Group 1 evaluators ---------------- */
+
+  // Shared impact shape: fast rise to a peak, slower settle. Zero at both edges.
+  _impactCurve(u, attack) {
+    const a = attack === undefined ? 0.25 : attack;
+    return u < a ? M.smoothstep(u / a) : 1 - M.smoothstep((u - a) / (1 - a));
+  },
+
+  // Deterministic central difference of a pure function of time.
+  _velocity(fn, t) {
+    return (fn(t + VELOCITY_DT) - fn(t - VELOCITY_DT)) / (2 * VELOCITY_DT);
+  },
+
+  // --- Impact Warp: radial bulge strength at this instant ---
+  impactWarp(t, params, width, height) {
+    const u = M.progress(t, params.start, params.duration);
+    if (u < 0) return null;
+    const amount = (WARP_AMOUNT[params.amount] || WARP_AMOUNT.medium) * this._impactCurve(u, 0.22);
+    if (!(amount > 1e-4)) return null;
+    const pct = Number(params.radius);
+    const radiusPx = (isFinite(pct) ? M.clamp(pct, 20, 100) : 60) / 100 * Math.min(width, height);
+    return {
+      amount,
+      radiusPx: Math.max(8, radiusPx),
+      cx: M.clamp(Number(params.focusX), 0, 1) * width,
+      cy: M.clamp(Number(params.focusY), 0, 1) * height,
+    };
+  },
+
+  // --- Glow / Bloom: enveloped bloom strength ---
+  glowBloom(t, params) {
+    const env = M.envelope(t, params.start, params.duration, 0.18);
+    if (env <= 0) return null;
+    const strength = (BLOOM_STRENGTH[params.strength] || BLOOM_STRENGTH.medium) * env;
+    return strength > 1e-4 ? { strength } : null;
+  },
+
+  // --- Lens Flare: short burst, positioned in normalised coordinates ---
+  lensFlare(t, params, width, height) {
+    const u = M.progress(t, params.start, params.duration);
+    if (u < 0) return null;
+    const strength = (FLARE_STRENGTH[params.strength] || FLARE_STRENGTH.medium) * this._impactCurve(u, 0.3);
+    if (!(strength > 1e-4)) return null;
+    return {
+      strength,
+      x: M.clamp(Number(params.focusX), 0, 1) * width,
+      y: M.clamp(Number(params.focusY), 0, 1) * height,
+    };
+  },
+
+  // --- Whip Pan: one decisive sweep out and back ---
+  // Offset is a pure function of t, so its velocity (used to drive the
+  // directional blur) is just a deterministic finite difference of it.
+  whipPanOffset(t, params, width, height) {
+    const u = M.progress(t, params.start, params.duration);
+    if (u < 0) return { x: 0, y: 0 };
+    const dist = (WHIP_DISTANCE[params.distance] || WHIP_DISTANCE.medium);
+    const horizontal = params.direction === 'left' || params.direction === 'right';
+    const span = (horizontal ? width : height) * dist;
+    // Eased sine: leaves and returns to exactly zero, fastest through the middle.
+    const travel = span * Math.sin(Math.PI * M.smootherstep(u));
+    const sign = (params.direction === 'left' || params.direction === 'up') ? -1 : 1;
+    return horizontal ? { x: sign * travel, y: 0 } : { x: 0, y: sign * travel };
+  },
+
+  whipPan(t, params, width, height) {
+    const u = M.progress(t, params.start, params.duration);
+    if (u < 0) return null;
+    const offset = this.whipPanOffset(t, params, width, height);
+    const horizontal = params.direction === 'left' || params.direction === 'right';
+    const axis = (tt) => {
+      const o = this.whipPanOffset(tt, params, width, height);
+      return horizontal ? o.x : o.y;
+    };
+    const velocity = this._velocity(axis, t);          // pixels per second
+    const blurPx = Math.min(Math.abs(velocity) * WHIP_BLUR_GAIN * (1 / 60),
+      WHIP_BLUR_MAX_FRAC * Math.min(width, height));
+    return { offset, blurPx, angle: horizontal ? 0 : Math.PI / 2 };
+  },
+
+  // --- Crash Zoom: violent arrival, distinct from Punch Zoom ---
+  // Much larger amount, a far shorter attack, an optional hold, and a radial
+  // streak driven by how fast the zoom is actually travelling.
+  crashZoomScale(t, params) {
+    const u = M.progress(t, params.start, params.duration);
+    if (u < 0) return 1;
+    const amount = CRASH_ZOOM_AMOUNT[params.amount] || CRASH_ZOOM_AMOUNT.medium;
+    const ATTACK = 0.12;
+    const RELEASE = params.mode === 'hold' ? 0.18 : 0.62;
+    let curve;
+    if (u < ATTACK) curve = M.smootherstep(u / ATTACK);
+    else if (u < 1 - RELEASE) curve = 1;
+    else curve = 1 - M.smoothstep((u - (1 - RELEASE)) / RELEASE);
+    return 1 + (amount - 1) * curve;
+  },
+
+  crashZoom(t, params) {
+    const u = M.progress(t, params.start, params.duration);
+    if (u < 0) return null;
+    const scale = this.crashZoomScale(t, params);
+    const velocity = this._velocity((tt) => this.crashZoomScale(tt, params), t);
+    return { scale, streak: Math.min(0.12, Math.abs(velocity) * CRASH_STREAK_GAIN) };
+  },
+
+  // --- Light Wipe: a band of light travelling across the frame ---
+  lightWipe(t, params) {
+    const u = M.progress(t, params.start, params.duration);
+    if (u < 0) return null;
+    const peak = LIGHT_WIPE_INTENSITY[params.intensity] || LIGHT_WIPE_INTENSITY.medium;
+    // Full strength across the middle of the sweep, easing in and out at the edges.
+    const envelope = Math.min(1, M.smoothstep(u / 0.15), M.smoothstep((1 - u) / 0.15));
+    const intensity = peak * envelope;
+    if (!(intensity > 1e-4)) return null;
+    // The band travels a little past both edges so it enters and leaves cleanly.
+    return { position: -0.25 + u * 1.5, intensity, direction: params.direction || 'left' };
+  },
+
+  // --- Strobe: evenly spaced pulses with real gaps between them ---
+  strobe(t, params) {
+    const u = M.progress(t, params.start, params.duration);
+    if (u < 0) return 0;
+    const pulses = M.clamp(Math.round(Number(params.pulses) || 3), 1, 5);
+    const peak = STROBE_ALPHA[params.intensity] || STROBE_ALPHA.medium;
+    const slot = u * pulses;
+    const withinSlot = slot - Math.floor(slot);
+    // Each pulse lights the first 45% of its slot; the rest is deliberate darkness.
+    const DUTY = 0.45;
+    if (withinSlot >= DUTY) return 0;
+    const p = withinSlot / DUTY;
+    return peak * (p < 0.3 ? M.smoothstep(p / 0.3) : 1 - M.smoothstep((p - 0.3) / 0.7));
+  },
+
+  // --- Sharpen punch: enveloped unsharp amount ---
+  sharpen(t, params) {
+    const env = M.envelope(t, params.start, params.duration, 0.15);
+    if (env <= 0) return 0;
+    return (SHARPEN_AMOUNT[params.amount] || SHARPEN_AMOUNT.medium) * env;
+  },
+
+  /* ---------------- Group 2 ---------------- */
+
+  // --- Displacement / Wave Warp: a travelling transverse wave field ---
+  // Deliberately NOT radial: the pattern runs across the frame along `angle`,
+  // where Impact Warp bulges outward from a point. Wavelength is measured on the
+  // short side so the same numbers look identical in landscape, portrait and 1:1.
+  waveWarp(t, params, width, height) {
+    const env = M.envelope(t, params.start, params.duration, 0.18);
+    if (env <= 0) return null;
+    const short = Math.min(width, height);
+    const amp = (WAVE_AMPLITUDE[params.amount] || WAVE_AMPLITUDE.medium) * short * env;
+    if (!(amp > 0.15)) return null;
+    const waves = M.clamp(Number(params.waves) || 3, 1, 8);
+    const k1 = (Math.PI * 2 * waves) / short;   // radians per pixel along travel
+    const k2 = k1 * 1.63;                       // cross ripple, deliberately not harmonic
+    const speed = WAVE_SPEED[params.speed] || WAVE_SPEED.medium;
+    // Phase advances with the source timestamp, so it is a pure function of the
+    // frame being rendered -- never a wall clock.
+    const phase = Math.PI * 2 * (t - params.start) * speed;
+    return { amp, k1, k2, phase, angle: (Number(params.angle) || 0) * Math.PI / 180 };
+  },
+
+  // --- Fisheye / Barrel Distortion: sustained global lens curvature ---
+  fisheye(t, params) {
+    const env = M.envelope(t, params.start, params.duration, 0.22);
+    if (env <= 0) return null;
+    const k = (FISHEYE_K[params.strength] || FISHEYE_K.medium) * env;
+    if (!(k > 0.01)) return null;
+    return { k };
+  },
+
+  // --- Posterize / Temporal Step: how long one source frame is held ---
+  // Returns the hold in SOURCE seconds; computeSourceTime turns that into the
+  // quantised timestamp actually fetched from the video.
+  temporalStep(t, params) {
+    if (t <= params.start || t >= params.start + params.duration) return null;
+    const rate = M.clamp(Number(params.rate) || 6, 1, 60);
+    return { hold: 1 / rate, anchor: params.start };
+  },
+
+  // --- Depth of Field / Focus Blur: a static focus region ---
+  // `div` is the downscale divisor the renderer blurs with, so blur strength and
+  // frame size stay tied together the way an aperture and a sensor do.
+  focusBlur(t, params, width, height) {
+    const env = M.envelope(t, params.start, params.duration, 0.2);
+    if (env <= 0) return null;
+    const short = Math.min(width, height);
+    const div = 1 + (DOF_BLUR[params.blur] || DOF_BLUR.medium) * short * env;
+    if (div < 1.6) return null;
+    return {
+      cx: M.clamp(Number(params.focusX), 0, 1) * width,
+      cy: M.clamp(Number(params.focusY), 0, 1) * height,
+      radiusPx: (M.clamp(Number(params.radius) || 35, 10, 80) / 100) * short,
+      div: Math.min(div, DOF_DIV_MAX),
+    };
+  },
+
+  // --- Focus Pull: the same lens, with the focus region travelling A -> B ---
+  // The ONLY difference from Depth of Field is that the centre is interpolated,
+  // so nothing about the frame moves -- only what is sharp.
+  focusPull(t, params, width, height) {
+    const u = M.progress(t, params.start, params.duration);
+    if (u < 0) return null;
+    const env = M.envelope(t, params.start, params.duration, 0.12);
+    if (env <= 0) return null;
+    const short = Math.min(width, height);
+    const div = 1 + (DOF_BLUR[params.blur] || DOF_BLUR.medium) * short * env;
+    if (div < 1.6) return null;
+    const k = M.smootherstep(u);                 // deterministic easing, no jumps
+    const fx = M.clamp(Number(params.fromX), 0, 1);
+    const fy = M.clamp(Number(params.fromY), 0, 1);
+    const tx = M.clamp(Number(params.toX), 0, 1);
+    const ty = M.clamp(Number(params.toY), 0, 1);
+    return {
+      cx: (fx + (tx - fx) * k) * width,
+      cy: (fy + (ty - fy) * k) * height,
+      radiusPx: (M.clamp(Number(params.radius) || 30, 10, 80) / 100) * short,
+      div: Math.min(div, DOF_DIV_MAX),
+    };
+  },
+
+};
+
+/* =========================================================================
+   MODULE: Frame state composer
+   Collapses the whole effect stack at one source timestamp into a single
+   description of what to do with the frame. Effects compose:
+     - zoom scales multiply
+     - shake offsets/rotations/margins add
+     - flash/vignette alphas combine as screen blends
+     - the strongest overlapping motion blur wins
+   ========================================================================= */
+// Posterize / Temporal Step: quantises WHICH source frame is fetched, before
+// anything is decoded or drawn. Output frame count and timestamps are untouched,
+// so the clip length never changes -- this is stepped time, not slow motion.
+// The coarsest active step wins, matching the "strongest wins" rule used by the
+// single-pass render stages.
+function computeSourceTime(effects, rawSourceTime) {
+  let hold = 0, anchor = 0;
+  for (const fx of effects) {
+    if (!fx.enabled || fx.type !== 'posterizeStep') continue;
+    const p = Object.assign({ start: fx.start, duration: fx.duration }, fx.params);
+    const step = EffectMath.temporalStep(rawSourceTime, p);
+    if (step && step.hold > hold) { hold = step.hold; anchor = step.anchor; }
+  }
+  if (!(hold > 0)) return rawSourceTime;
+  // Anchored at the effect start, so the first held frame is exactly the frame
+  // the window opens on and the quantised time is never before the window.
+  const stepped = anchor + Math.floor((rawSourceTime - anchor) / hold) * hold;
+  return stepped < anchor ? anchor : stepped;
+}
+
+function computeFrameState(effects, sourceTime, width, height, frameIndex) {
+  let zoomScale = 1;
+  let dx = 0, dy = 0, rot = 0, shakeMargin = 0;
+  let flashAlpha = 0, vignetteAlpha = 0;
+  let blurWeights = null;
+  // Phase 3 accumulators
+  let ghostTaps = null;
+  let chromaDx = 0, chromaDy = 0, chromaActive = false;
+  let radial = null, directional = null, glitch = null;
+  let sharpenAmount = 0;
+  // Group 1 accumulators
+  let warp = null, bloom = null, flare = null, lightWipe = null;
+  // Group 2 accumulators. Depth of Field and Focus Pull share one descriptor so
+  // they also share one blur pass.
+  let wave = null, fisheye = null, dof = null;
+  const fi = frameIndex || 0;
+
+  for (const fx of effects) {
+    if (!fx.enabled) continue;
+    const p = Object.assign({ start: fx.start, duration: fx.duration }, fx.params);
+    switch (fx.type) {
+      case 'shake': {
+        const s = EffectMath.shake(sourceTime, p, width, height);
+        if (s) { dx += s.dx; dy += s.dy; rot += s.rot; shakeMargin += s.margin; }
+        break;
+      }
+      case 'punchZoom':
+        zoomScale *= EffectMath.punchZoom(sourceTime, p);
+        break;
+      case 'smoothZoom':
+        zoomScale *= EffectMath.smoothZoom(sourceTime, p);
+        break;
+      case 'flash': {
+        const a = EffectMath.flash(sourceTime, p);
+        if (a > 0) flashAlpha = 1 - (1 - flashAlpha) * (1 - a);
+        break;
+      }
+      case 'vignette': {
+        const a = EffectMath.vignette(sourceTime, p);
+        if (a > 0) vignetteAlpha = 1 - (1 - vignetteAlpha) * (1 - a);
+        break;
+      }
+      case 'motionBlur': {
+        const w = EffectMath.motionBlur(sourceTime, p);
+        // Strongest blur wins: the smaller the newest-frame weight, the stronger.
+        if (w && (!blurWeights || w[0] < blurWeights[0])) blurWeights = w;
+        break;
+      }
+      case 'speedRamp':
+      case 'freeze':
+        break; // time-domain effects, handled by the time map
+
+      /* ---------------- Phase 3 ---------------- */
+      case 'dutchTilt':
+        rot += EffectMath.dutchTilt(sourceTime, p);
+        break;
+      case 'chromaAberration': {
+        const c = EffectMath.chromaAberration(sourceTime, p, width);
+        if (c) { chromaDx += c.dx; chromaDy += c.dy; chromaActive = true; }
+        break;
+      }
+      case 'radialBlur': {
+        const r = EffectMath.radialBlur(sourceTime, p);
+        // Strongest wins: one radial pass keeps the cost bounded and the focal
+        // point unambiguous when two overlap.
+        if (r && (!radial || r.scales[r.scales.length - 1] > radial.scales[radial.scales.length - 1])) radial = r;
+        break;
+      }
+      case 'directionalBlur': {
+        const d = EffectMath.directionalBlur(sourceTime, p, width);
+        if (d && (!directional || d.pad > directional.pad)) directional = d;
+        break;
+      }
+      case 'glitchBurst': {
+        const g = EffectMath.glitch(fi, p, width, height, sourceTime);
+        if (g && (!glitch || g.slices.length > glitch.slices.length)) glitch = g;
+        break;
+      }
+      case 'ghostTrail': {
+        const taps = EffectMath.ghostTrail(sourceTime, p);
+        if (taps) ghostTaps = mergeTemporalTaps(ghostTaps, taps);
+        break;
+      }
+      case 'sharpenPunch':
+        sharpenAmount += EffectMath.sharpen(sourceTime, p);
+        break;
+
+      /* ---------------- Group 1 ---------------- */
+      case 'impactWarp': {
+        const wv = EffectMath.impactWarp(sourceTime, p, width, height);
+        // One warp pass keeps the cost bounded; the strongest bulge wins.
+        if (wv && (!warp || wv.amount > warp.amount)) warp = wv;
+        break;
+      }
+      case 'glowBloom': {
+        const b = EffectMath.glowBloom(sourceTime, p);
+        if (b) bloom = { strength: Math.max(bloom ? bloom.strength : 0, b.strength) };
+        break;
+      }
+      case 'lensFlare': {
+        const f = EffectMath.lensFlare(sourceTime, p, width, height);
+        if (f && (!flare || f.strength > flare.strength)) flare = f;
+        break;
+      }
+      case 'whipPan': {
+        const wp = EffectMath.whipPan(sourceTime, p, width, height);
+        if (wp) {
+          // Feeds the SAME translation the overscan bound is computed from, so
+          // a pan can never open a border.
+          dx += wp.offset.x;
+          dy += wp.offset.y;
+          if (wp.blurPx > 0.5) {
+            const d = buildDirectionalBlur(wp.blurPx, wp.angle);
+            if (!directional || d.pad > directional.pad) directional = d;
+          }
+        }
+        break;
+      }
+      case 'crashZoom': {
+        const cz = EffectMath.crashZoom(sourceTime, p);
+        if (cz) {
+          zoomScale *= cz.scale;
+          if (cz.streak > 0.001) {
+            const r = buildRadialStreak(cz.streak);
+            if (!radial || r.scales[r.scales.length - 1] > radial.scales[radial.scales.length - 1]) radial = r;
+          }
+        }
+        break;
+      }
+      case 'lightWipe': {
+        const lw = EffectMath.lightWipe(sourceTime, p);
+        if (lw && (!lightWipe || lw.intensity > lightWipe.intensity)) lightWipe = lw;
+        break;
+      }
+      case 'strobe': {
+        // Strobe is flash light, so it screen-combines through the existing
+        // accumulator rather than adding another overlay pass.
+        const a = EffectMath.strobe(sourceTime, p);
+        if (a > 0) flashAlpha = 1 - (1 - flashAlpha) * (1 - a);
+        break;
+      }
+
+      /* ---------------- Group 2 ---------------- */
+      case 'waveWarp': {
+        const wv = EffectMath.waveWarp(sourceTime, p, width, height);
+        // One displacement pass keeps the per-pixel cost bounded; strongest wins.
+        if (wv && (!wave || wv.amp > wave.amp)) wave = wv;
+        break;
+      }
+      case 'fisheye': {
+        const f = EffectMath.fisheye(sourceTime, p);
+        if (f && (!fisheye || f.k > fisheye.k)) fisheye = f;
+        break;
+      }
+      case 'posterizeStep':
+        break; // time-domain effect, applied by computeSourceTime before the seek
+      case 'focusBlur': {
+        const d = EffectMath.focusBlur(sourceTime, p, width, height);
+        if (d && (!dof || d.div > dof.div)) dof = d;
+        break;
+      }
+      case 'focusPull': {
+        const d = EffectMath.focusPull(sourceTime, p, width, height);
+        if (d && (!dof || d.div > dof.div)) dof = d;
+        break;
+      }
+    }
+  }
+
+  // One overscan factor covering every active shake's margin at this instant.
+  // The Phase 2 shake heuristic is kept exactly as it was; the exact rotated-
+  // rectangle bound is then applied as a floor, which only ever binds when a
+  // Dutch Tilt is active (shake alone stays under it), so shake-only stacks
+  // render bit-identically to Phase 2.
+  const shakeOverscan = shakeMargin > 0 ? 1 + (2 * shakeMargin) / Math.min(width, height) : 1;
+  const overscan = Math.max(shakeOverscan, coverScaleFor(rot, dx, dy, width, height));
+  const scale = zoomScale * overscan;
+  const geometric = scale !== 1 || dx !== 0 || dy !== 0 || rot !== 0;
+
+  // Motion Blur and Ghost Trail both read the rendered-frame history; when both
+  // are active their taps merge into one weighted blend.
+  let temporalTaps = null;
+  if (blurWeights) temporalTaps = blurWeights.map((w, i) => ({ index: i, weight: w }));
+  if (ghostTaps) temporalTaps = mergeTemporalTaps(temporalTaps, ghostTaps);
+
+  const chroma = (chromaActive || (glitch && (glitch.chromaDx || glitch.chromaDy)))
+    ? { dx: chromaDx + (glitch ? glitch.chromaDx : 0), dy: chromaDy + (glitch ? glitch.chromaDy : 0) }
+    : null;
+
+  return {
+    scale, dx, dy, rot, flashAlpha, vignetteAlpha, blurWeights, geometric,
+    temporalTaps, chroma, radial, directional, glitch,
+    sharpenAmount: Math.min(sharpenAmount, 1.5),
+    warp, bloom, flare, lightWipe,
+    wave, fisheye, dof,
+  };
+}
+
+// Radial/directional blur descriptors in the shape the existing stages expect,
+// so Crash Zoom and Whip Pan reuse those passes instead of adding new ones.
+function buildRadialStreak(amount) {
+  const taps = 7;
+  const scales = [], weights = [];
+  for (let k = 0; k < taps; k++) {
+    const f = k / (taps - 1);
+    scales.push(1 + amount * f);
+    weights.push(1 - f + 0.15);
+  }
+  return { fx: 0.5, fy: 0.5, scales, weights };
+}
+
+// Used only by Whip Pan (the standalone Directional Blur effect builds its own
+// taps). The tap count scales with the radius -- a fixed 5 taps over a 17px
+// half-length leaves ~8px between samples, which reads as discrete ghost copies
+// on a hard edge rather than as a smear.
+function buildDirectionalBlur(halfPx, angle) {
+  const taps = Math.min(15, Math.max(5, 1 + 2 * Math.ceil(halfPx / 2.5)));
+  const offsets = [], weights = [];
+  for (let k = 0; k < taps; k++) {
+    const f = (k / (taps - 1)) * 2 - 1;
+    offsets.push({ x: Math.cos(angle) * halfPx * f, y: Math.sin(angle) * halfPx * f });
+    weights.push(1);
+  }
+  return { offsets, weights, pad: halfPx };
+}
+
+// Combines two temporal tap lists (index into frame history -> weight),
+// summing weights that land on the same history index.
+function mergeTemporalTaps(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+  const byIndex = new Map();
+  for (const t of a) byIndex.set(t.index, (byIndex.get(t.index) || 0) + t.weight);
+  for (const t of b) byIndex.set(t.index, (byIndex.get(t.index) || 0) + t.weight);
+  return Array.from(byIndex.entries())
+    .map(([index, weight]) => ({ index, weight }))
+    .sort((x, y) => x.index - y.index);
+}
+
+/* =========================================================================
+   MODULE: Hook Overlay (V1)
+   A single short hook burned into the top of the clip. Deliberately NOT an
+   effect-stack item: it is a final screen overlay, so it never takes part in
+   camera geometry, overscan, frame history or any of the blur/glitch stages.
+   It is governed by OUTPUT time, so a Freeze or Speed Ramp cannot stretch or
+   shift it -- 1.2s of hook is 1.2s of finished video.
+   ========================================================================= */
+const HOOK_START = 0;            // V1: the hook always opens the clip
+const HOOK_VERTICAL = 0.58;      // fraction of canvas height, just below centre
+const HOOK_POP_SCALE = 0.18;     // how much larger the first frames are
+const HOOK_POP_SECONDS = 0.12;   // how long the snap takes to settle
+const HOOK_SAFE_WIDTH = 0.90;    // text is fitted inside this fraction of width
+const HOOK_FONT_STACK = '900 {px}px system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+
+const HOOK_DEFAULTS = { enabled: false, text: '', duration: 1.2, fontPct: 9 };
+
+// Pure function of output time and canvas size: no clock, no randomness.
+// Returns null when the hook should not be drawn on this frame.
+function computeHookState(hook, outputTime, width, height) {
+  if (!hook || !hook.enabled) return null;
+  const text = String(hook.text === undefined ? '' : hook.text);
+  if (!text.trim()) return null;
+  const duration = Number(hook.duration);
+  if (!(duration > 0)) return null;
+
+  const elapsed = outputTime - HOOK_START;
+  if (elapsed < 0 || elapsed >= duration) return null;
+
+  // Snap entrance: starts slightly oversized and settles to 100%.
+  const popWindow = Math.min(HOOK_POP_SECONDS, duration * 0.25);
+  const popScale = popWindow > 0 && elapsed < popWindow
+    ? 1 + HOOK_POP_SCALE * (1 - M.smoothstep(elapsed / popWindow))
+    : 1;
+
+  const pct = Number(hook.fontPct);
+  const basePx = (isFinite(pct) ? pct : HOOK_DEFAULTS.fontPct) / 100 * Math.min(width, height);
+
+  return {
+    text,
+    basePx: Math.max(1, basePx),
+    popScale,
+    x: width / 2,
+    y: height * HOOK_VERTICAL,
+    maxWidth: width * HOOK_SAFE_WIDTH,
+  };
+}
+
+// Shrinks the font until the text fits the safe width. Text is never truncated.
+// measureText is deterministic for a given font/size/string, so preview and
+// export fit identically.
+function fitHookFontPx(ctx, text, basePx, maxWidth) {
+  let px = basePx;
+  for (let i = 0; i < 8; i++) {
+    ctx.font = HOOK_FONT_STACK.replace('{px}', String(px));
+    const w = ctx.measureText(text).width;
+    if (!(w > maxWidth) || !(w > 0)) break;
+    px = px * (maxWidth / w);
+  }
+  return px;
+}
+
+/* =========================================================================
+   MODULE: Time map (Speed Ramp)
+   Builds an exact, strictly increasing piecewise-linear source<->output time
+   mapping from the enabled speed ramps. Output frame timestamps are always
+   i / fps, so muxed timestamps stay monotonic no matter how time is warped.
+   Overlapping ramps multiply (2x over 2x = 4x), which keeps the map monotonic.
+   ========================================================================= */
+const TimeMap = {
+  build(effects, sourceDuration) {
+    const ramps = [];
+    for (const fx of effects) {
+      if (!fx.enabled || fx.type !== 'speedRamp') continue;
+      const speed = parseFloat(fx.params.speed);
+      if (!(speed > 0) || !isFinite(speed)) continue;
+      const s = M.clamp(fx.start, 0, sourceDuration);
+      const e = M.clamp(fx.start + fx.duration, 0, sourceDuration);
+      if (e > s) ramps.push({ start: s, end: e, speed });
+    }
+
+    // Freezes insert extra output time during which the source time stands
+    // still. They are modelled as zero-source-width segments with speed 0, so
+    // sourceTimeAt() returns their srcStart for the whole hold and output
+    // timestamps stay strictly increasing.
+    const holds = new Map();
+    for (const fx of effects) {
+      if (!fx.enabled || fx.type !== 'freeze') continue;
+      const at = M.clamp(fx.start, 0, sourceDuration);
+      const hold = Number(fx.duration);
+      if (!(hold > 0) || !isFinite(at)) continue;
+      holds.set(at, (holds.get(at) || 0) + hold); // stacked freezes at one point add up
+    }
+
+    const points = new Set([0, sourceDuration]);
+    for (const r of ramps) { points.add(r.start); points.add(r.end); }
+    for (const at of holds.keys()) points.add(at);
+    const sorted = Array.from(points).filter((v) => isFinite(v)).sort((a, b) => a - b);
+
+    const segments = [];
+    let outT = 0;
+    for (let i = 0; i < sorted.length; i++) {
+      const a = sorted[i];
+      if (holds.has(a)) {
+        const hold = holds.get(a);
+        segments.push({ srcStart: a, srcEnd: a, outStart: outT, outEnd: outT + hold, speed: 0 });
+        outT += hold;
+      }
+      const b = sorted[i + 1];
+      if (b === undefined || !(b > a)) continue;
+      const mid = (a + b) / 2;
+      let speed = 1;
+      for (const r of ramps) if (mid >= r.start && mid <= r.end) speed *= r.speed;
+      const outLen = (b - a) / speed;
+      segments.push({ srcStart: a, srcEnd: b, outStart: outT, outEnd: outT + outLen, speed });
+      outT += outLen;
+    }
+    if (segments.length === 0) {
+      segments.push({ srcStart: 0, srcEnd: sourceDuration, outStart: 0, outEnd: sourceDuration, speed: 1 });
+      outT = sourceDuration;
+    }
+    return {
+      segments,
+      sourceDuration,
+      outputDuration: outT,
+      sourceTimeAt(outputTime) {
+        const y = M.clamp(outputTime, 0, this.outputDuration);
+        for (let i = 0; i < this.segments.length; i++) {
+          const s = this.segments[i];
+          if (y <= s.outEnd || i === this.segments.length - 1) {
+            return s.srcStart + (y - s.outStart) * s.speed;
+          }
+        }
+        return this.sourceDuration;
+      },
+      outputTimeAt(sourceTime) {
+        const x = M.clamp(sourceTime, 0, this.sourceDuration);
+        for (let i = 0; i < this.segments.length; i++) {
+          const s = this.segments[i];
+          // A hold maps one source time onto a range of output times; the
+          // surrounding moving segments answer for it, so skip it here.
+          if (s.speed === 0) continue;
+          if (x <= s.srcEnd || i === this.segments.length - 1) {
+            return s.outStart + (x - s.srcStart) / s.speed;
+          }
+        }
+        return this.outputDuration;
+      },
+    };
+  },
+};
+
+/* =========================================================================
+   MODULE: Effect stack model  (independent timeline items)
+   ========================================================================= */
+const EffectStack = (() => {
+  let items = [];
+  let nextId = 1;
+  let selectedId = null;
+
+  function create(type, startTime) {
+    const def = EFFECT_TYPES[type];
+    if (!def) throw new Error('Unknown effect type: ' + type);
+    const fx = {
+      id: nextId++,
+      type,
+      enabled: true,
+      start: Math.max(0, Math.round((startTime || 0) * 100) / 100),
+      duration: def.defaultDuration,
+      params: Object.assign({}, def.defaults),
+    };
+    items.push(fx);
+    selectedId = fx.id;
+    return fx;
+  }
+
+  function normalize(raw) {
+    const def = EFFECT_TYPES[raw.type];
+    if (!def) return null;
+    const params = Object.assign({}, def.defaults, raw.params || {});
+    // Numeric parameters are stored as numbers and clamped to their range;
+    // select parameters keep their string values untouched.
+    for (const p of def.params) {
+      if (p.type !== 'number') continue;
+      const v = Number(params[p.key]);
+      params[p.key] = isFinite(v) ? M.clamp(v, p.min, p.max) : def.defaults[p.key];
+    }
+    return {
+      id: nextId++,
+      type: raw.type,
+      enabled: raw.enabled !== false,
+      start: Number(raw.start) || 0,
+      duration: raw.duration === undefined ? def.defaultDuration : Number(raw.duration),
+      params,
+    };
+  }
+
+  return {
+    all: () => items,
+    // Deep snapshot so a running render is never affected by later UI edits.
+    snapshot: () => items.map((fx) => ({
+      id: fx.id, type: fx.type, enabled: fx.enabled,
+      start: fx.start, duration: fx.duration,
+      params: Object.assign({}, fx.params),
+    })),
+    get: (id) => items.find((fx) => fx.id === id) || null,
+    add: create,
+    remove(id) {
+      items = items.filter((fx) => fx.id !== id);
+      if (selectedId === id) selectedId = items.length ? items[items.length - 1].id : null;
+    },
+    clear() { items = []; selectedId = null; },
+    select(id) { selectedId = id; },
+    selectedId: () => selectedId,
+    selected: () => items.find((fx) => fx.id === selectedId) || null,
+    replaceAll(rawList) {
+      items = (rawList || []).map(normalize).filter(Boolean);
+      selectedId = items.length ? items[0].id : null;
+    },
+  };
+})();
+
+/* =========================================================================
+   MODULE: Validation -- invalid settings must never silently produce
+   corrupt output, so rendering refuses to start instead.
+   ========================================================================= */
+function validateRender(effects, meta, outputFps, timeMap, hook) {
+  const errors = [];
+  const warnings = [];
+  if (!meta) { errors.push('No video is loaded.'); return { errors, warnings }; }
+  if (!(meta.width > 0 && meta.height > 0)) errors.push('Source video has no readable dimensions.');
+  if (!(meta.duration > 0) || !isFinite(meta.duration)) errors.push('Source video has no readable duration.');
+  if (!(outputFps >= 1 && outputFps <= 120)) errors.push('Output frame rate must be between 1 and 120 fps.');
+
+  for (const fx of effects) {
+    if (!fx.enabled) continue;
+    const name = effectLabel(fx.type);
+    if (!isFinite(fx.start) || fx.start < 0) errors.push(name + ': start time must be zero or greater.');
+    if (!isFinite(fx.duration) || fx.duration <= 0) errors.push(name + ': duration must be greater than zero.');
+    if (fx.type === 'speedRamp') {
+      const s = parseFloat(fx.params.speed);
+      if (!(s > 0) || !isFinite(s)) errors.push(name + ': speed must be a positive number.');
+    }
+    // Numeric parameters must be finite and inside their declared range,
+    // otherwise the render could produce nonsense geometry.
+    const def = EFFECT_TYPES[fx.type];
+    for (const p of (def ? def.params : [])) {
+      if (p.type !== 'number') continue;
+      const v = Number(fx.params[p.key]);
+      if (!isFinite(v)) errors.push(name + ': ' + p.label + ' must be a number.');
+      else if (v < p.min || v > p.max) {
+        errors.push(name + ': ' + p.label + ' must be between ' + p.min + ' and ' + p.max + '.');
+      }
+    }
+    // An effect window narrower than the output frame spacing can fall between
+    // sample points and never render. Warn instead of silently doing nothing.
+    if (fx.duration > 0 && outputFps >= 1 && fx.duration < 1.5 / outputFps) {
+      warnings.push(name + ' lasts only ' + fx.duration.toFixed(3) + 's, which is shorter than 1.5 output frames (' +
+        (1 / outputFps).toFixed(3) + 's each). It may land between frames and not appear at all — ' +
+        'lengthen it to about ' + (2 / outputFps).toFixed(2) + 's or raise the output frame rate.');
+    }
+    if (isFinite(fx.start) && meta.duration > 0 && fx.start >= meta.duration) {
+      warnings.push(name + ' starts at ' + fx.start.toFixed(2) + 's, at or past the end of the video, so it will never be visible.');
+    } else if (isFinite(fx.start) && isFinite(fx.duration) && fx.start + fx.duration > meta.duration) {
+      warnings.push(name + ' extends past the end of the video and will be cut short.');
+    }
+  }
+
+  // Effect windows are source times, so an effect spanning a freeze point holds
+  // along with the picture. Warn rather than let that surprise anyone.
+  const freezePoints = effects.filter((f) => f.enabled && f.type === 'freeze' && f.duration > 0).map((f) => f.start);
+  if (freezePoints.length) {
+    for (const fx of effects) {
+      if (!fx.enabled || fx.type === 'freeze' || fx.type === 'speedRamp') continue;
+      if (!(fx.duration > 0)) continue;
+      for (const at of freezePoints) {
+        if (fx.start < at && at < fx.start + fx.duration) {
+          warnings.push(effectLabel(fx.type) + ' spans the Freeze at ' + at.toFixed(2) + 's, so it will hold ' +
+            'still for the whole freeze. Move it to finish before the freeze if you want it to keep animating.');
+          break;
+        }
+      }
+    }
+  }
+
+  if (hook && hook.enabled) {
+    if (!String(hook.text === undefined ? '' : hook.text).trim()) {
+      warnings.push('Hook Overlay is on but the text is empty, so nothing will be drawn.');
+    }
+    if (!(Number(hook.duration) > 0)) errors.push('Hook Overlay: duration must be greater than zero.');
+    const pct = Number(hook.fontPct);
+    if (!isFinite(pct) || pct < 2 || pct > 25) errors.push('Hook Overlay: font size must be between 2% and 25% of the frame.');
+  }
+
+  if (timeMap) {
+    if (!isFinite(timeMap.outputDuration) || timeMap.outputDuration <= 0) {
+      errors.push('The effect settings produce an empty or invalid output duration.');
+    } else {
+      const frames = Math.round(timeMap.outputDuration * outputFps);
+      if (frames > 20000) {
+        errors.push('This would produce ' + frames + ' output frames. Shorten the clip, lower the frame rate, or reduce slow-motion.');
+      }
+    }
+    // The map must be strictly increasing or the muxed timestamps become invalid.
+    for (const s of timeMap.segments) {
+      if (!(s.outEnd > s.outStart) && s.srcEnd > s.srcStart) {
+        errors.push('Speed ramp settings produced a non-monotonic timeline.');
+        break;
+      }
+    }
+  }
+  return { errors, warnings };
+}
+
+/* =========================================================================
+   MODULE: Metadata detection (duration / dimensions / fps / type)
+   ========================================================================= */
+const Metadata = (() => {
+  function waitForLoadedMetadata(video) {
+    return new Promise((resolve, reject) => {
+      if (video.readyState >= 1) { resolve(); return; }
+      const onLoaded = () => { cleanup(); resolve(); };
+      const onError = () => { cleanup(); reject(new Error('Could not read video metadata (unsupported or corrupt file?)')); };
+      function cleanup() {
+        video.removeEventListener('loadedmetadata', onLoaded);
+        video.removeEventListener('error', onError);
+      }
+      video.addEventListener('loadedmetadata', onLoaded);
+      video.addEventListener('error', onError);
+    });
+  }
+
+  // Best-effort FPS estimate from a short sampled playback using
+  // requestVideoFrameCallback, which reports true presented media time per
+  // frame. Browsers expose no exact source frame rate for arbitrary WebM.
+  function estimateFps(video) {
+    return new Promise((resolve) => {
+      if (typeof video.requestVideoFrameCallback !== 'function') { resolve(null); return; }
+      let count = 0, firstMediaTime = null, lastMediaTime = null, finished = false;
+      const maxSamples = 45;
+      const wasMuted = video.muted;
+      video.muted = true;
+
+      function finish() {
+        if (finished) return;
+        finished = true;
+        video.pause();
+        video.currentTime = 0;
+        video.muted = wasMuted;
+        clearTimeout(safetyTimer);
+        if (count >= 4 && lastMediaTime > firstMediaTime) resolve((count - 1) / (lastMediaTime - firstMediaTime));
+        else resolve(null);
+      }
+
+      function onFrame(now, metadata) {
+        if (finished) return;
+        if (firstMediaTime === null) firstMediaTime = metadata.mediaTime;
+        lastMediaTime = metadata.mediaTime;
+        count++;
+        if (count < maxSamples && !video.paused && !video.ended) video.requestVideoFrameCallback(onFrame);
+        else finish();
+      }
+
+      const safetyTimer = setTimeout(finish, 1800);
+      video.currentTime = 0;
+      video.play().then(() => video.requestVideoFrameCallback(onFrame)).catch(() => finish());
+    });
+  }
+
+  function guessTypeFromName(name) {
+    const ext = (name.split('.').pop() || '').toLowerCase();
+    const map = { webm: 'video/webm', mp4: 'video/mp4', mov: 'video/quicktime', ogv: 'video/ogg', mkv: 'video/x-matroska' };
+    return map[ext] || 'unknown';
+  }
+
+  async function detect(file, video) {
+    await waitForLoadedMetadata(video);
+    const width = video.videoWidth;
+    const height = video.videoHeight;
+    const duration = video.duration;
+    Log.info('Metadata loaded: ' + width + 'x' + height + ', duration=' + duration.toFixed(3) + 's');
+
+    document.getElementById('infoName').textContent = file.name;
+    document.getElementById('infoType').textContent = file.type || '(unknown - guessed from extension: ' + guessTypeFromName(file.name) + ')';
+    document.getElementById('infoDuration').textContent = duration.toFixed(3) + ' s';
+    document.getElementById('infoDimensions').textContent = width + ' x ' + height + ' px';
+    document.getElementById('infoFps').textContent = 'Detecting...';
+
+    const detectedFps = await estimateFps(video);
+    let fpsText, outputFpsDefault;
+    if (detectedFps && isFinite(detectedFps) && detectedFps > 1) {
+      fpsText = detectedFps.toFixed(2) + ' fps (estimated from sampled playback)';
+      outputFpsDefault = Math.round(detectedFps);
+    } else {
+      fpsText = 'Not reliably detected (requestVideoFrameCallback unavailable or sample too short)';
+      outputFpsDefault = 30;
+      Log.warn('FPS could not be reliably detected; defaulting output frame rate to 30.');
+    }
+    document.getElementById('infoFps').textContent = fpsText;
+    document.getElementById('outputFpsInput').value = outputFpsDefault;
+
+    if (width * height > 2560 * 1440) {
+      Log.warn('High resolution source (' + width + 'x' + height + '). Rendering will use more memory and take longer, especially with Motion Blur.');
+    }
+
+    return { name: file.name, type: file.type || guessTypeFromName(file.name), duration, width, height, detectedFps };
+  }
+
+  return { detect };
+})();
+
+/* =========================================================================
+   MODULE: Frame source -- deterministic, timestamp-addressed decode
+   Browsers expose no built-in WebM demuxer, and WebCodecs VideoDecoder
+   requires already-demuxed chunks, so frames are pulled by seeking the
+   <video> element to an exact source timestamp and reading the decoded
+   pixels. This uses the browser's real decoder, is fully timestamp-driven,
+   and is not screen/tab capture.
+   ========================================================================= */
+const SEEK_TIMEOUT_MS = 15000;
+const SEEK_MAX_ATTEMPTS = 3;
+
+function seekOnce(video, t) {
+  return new Promise((resolve, reject) => {
+    // Already parked on exactly this timestamp: the element still holds that
+    // frame, so reading it now is correct (and depends only on the requested
+    // time sequence, never on timing).
+    if (Math.abs(video.currentTime - t) < 0.0005) { resolve('already'); return; }
+    let settled = false;
+    function cleanup() {
+      video.removeEventListener('seeked', onSeeked);
+      video.removeEventListener('error', onError);
+      clearTimeout(timer);
+    }
+    function onSeeked() { if (settled) return; settled = true; cleanup(); resolve('seeked'); }
+    function onError() { if (settled) return; settled = true; cleanup(); reject(new Error('Video decode/seek error at t=' + t.toFixed(3) + 's')); }
+    const timer = setTimeout(() => { if (settled) return; settled = true; cleanup(); resolve('timeout'); }, SEEK_TIMEOUT_MS);
+    video.addEventListener('seeked', onSeeked);
+    video.addEventListener('error', onError);
+    video.currentTime = t;
+  });
+}
+
+// Correctness over liveness: a stalled seek is retried rather than allowed to
+// fall through and draw whatever frame happens to be in the element. If the
+// decoder really will not deliver the frame, the render stops with an error
+// instead of silently writing a wrong frame and breaking determinism.
+async function seekVideoTo(video, t) {
+  for (let attempt = 1; attempt <= SEEK_MAX_ATTEMPTS; attempt++) {
+    const outcome = await seekOnce(video, t);
+    if (outcome !== 'timeout') return;
+    Log.warn('Seek to ' + t.toFixed(3) + 's timed out (attempt ' + attempt + '/' + SEEK_MAX_ATTEMPTS + '); retrying rather than using a stale frame.');
+  }
+  throw new Error('The video decoder did not deliver the frame at ' + t.toFixed(3) + 's after ' +
+    SEEK_MAX_ATTEMPTS + ' attempts. Rendering was stopped instead of writing an incorrect frame.');
+}
+
+/* =========================================================================
+   MODULE: Deterministic frame history (Motion Blur)
+   A ring of recent geometry-processed frames. Because output frames are
+   always produced in order from index 0, the contents at frame i are a pure
+   function of the preceding timestamps -- a stall changes when a frame is
+   produced, never which frames are in the history.
+   ========================================================================= */
+class FrameHistory {
+  constructor(size, width, height) {
+    this.size = Math.max(1, size);
+    this.slots = [];
+    for (let i = 0; i < this.size; i++) {
+      const c = document.createElement('canvas');
+      c.width = width; c.height = height;
+      this.slots.push({ canvas: c, ctx: c.getContext('2d', { alpha: false }) });
+    }
+    this.head = 0;
+    this.count = 0;
+  }
+  push(sourceCanvas) {
+    const slot = this.slots[this.head];
+    slot.ctx.setTransform(1, 0, 0, 1, 0, 0);
+    slot.ctx.globalAlpha = 1;
+    slot.ctx.drawImage(sourceCanvas, 0, 0);
+    this.head = (this.head + 1) % this.size;
+    this.count++;
+  }
+  available() { return Math.min(this.count, this.size); }
+  // k = 0 is the newest pushed frame.
+  get(k) {
+    if (k < 0 || k >= this.available()) return null;
+    return this.slots[(this.head - 1 - k + this.size * 2) % this.size].canvas;
+  }
+}
+
+/* =========================================================================
+   MODULE: Frame renderer -- the single visual pipeline.
+   Order: geometry (zoom + shake) -> motion blur -> flash -> vignette.
+   Used identically by Preview and Export.
+   ========================================================================= */
+class FrameRenderer {
+  constructor(width, height) {
+    this.width = width;
+    this.height = height;
+    this.geoCanvas = document.createElement('canvas');
+    this.geoCanvas.width = width; this.geoCanvas.height = height;
+    this.geoCtx = this.geoCanvas.getContext('2d', { alpha: false });
+    this.blendCanvas = null;
+    this.blendCtx = null;
+    this.history = null;
+    this.vignetteGradient = null;
+  }
+
+  enableHistory(taps) {
+    this.history = new FrameHistory(taps, this.width, this.height);
+    this.blendCanvas = document.createElement('canvas');
+    this.blendCanvas.width = this.width; this.blendCanvas.height = this.height;
+    this.blendCtx = this.blendCanvas.getContext('2d', { alpha: false });
+  }
+
+  // Lazily created, reused scratch surfaces -- one per stage, allocated only
+  // when that stage is first needed and never per frame.
+  _stage(name) {
+    if (!this.stages) this.stages = {};
+    if (!this.stages[name]) {
+      const c = document.createElement('canvas');
+      c.width = this.width; c.height = this.height;
+      this.stages[name] = { canvas: c, ctx: c.getContext('2d', { alpha: false }) };
+    }
+    return this.stages[name];
+  }
+
+  // Depth of field needs a stage it can punch a hole in, which an alpha:false
+  // context cannot do. Same lazy, reused-surface contract as _stage.
+  _stageAlpha(name) {
+    if (!this.alphaStages) this.alphaStages = {};
+    if (!this.alphaStages[name]) {
+      const c = document.createElement('canvas');
+      c.width = this.width; c.height = this.height;
+      this.alphaStages[name] = { canvas: c, ctx: c.getContext('2d', { alpha: true }) };
+    }
+    return this.alphaStages[name];
+  }
+
+  _gradient(ctx) {
+    if (!this.vignetteGradient) {
+      const cx = this.width / 2, cy = this.height / 2;
+      const outer = Math.sqrt(cx * cx + cy * cy);
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, outer);
+      g.addColorStop(0.00, 'rgba(0,0,0,0)');
+      g.addColorStop(0.55, 'rgba(0,0,0,0)');
+      g.addColorStop(0.80, 'rgba(0,0,0,0.45)');
+      g.addColorStop(1.00, 'rgba(0,0,0,1)');
+      this.vignetteGradient = g;
+    }
+    return this.vignetteGradient;
+  }
+
+  // Renders one output frame and returns the canvas that should be encoded.
+  render(videoElement, state, frameIndex, hookState) {
+    const W = this.width, H = this.height;
+    const gctx = this.geoCtx;
+
+    // --- geometry: zoom scale, shake offset/rotation, shake overscan ---
+    gctx.setTransform(1, 0, 0, 1, 0, 0);
+    gctx.globalAlpha = 1;
+    if (state.geometric) {
+      gctx.translate(W / 2 + state.dx, H / 2 + state.dy);
+      gctx.rotate(state.rot);
+      gctx.scale(state.scale, state.scale);
+      gctx.translate(-W / 2, -H / 2);
+    }
+    gctx.drawImage(videoElement, 0, 0, W, H);
+    gctx.setTransform(1, 0, 0, 1, 0, 0);
+
+    // --- motion blur: blend the trailing history (pristine geometry frames) ---
+    if (this.history) this.history.push(this.geoCanvas);
+
+    let canvas = this.geoCanvas;
+    let ctx = gctx;
+    if (state.temporalTaps && this.history && this.history.available() > 1) {
+      this._blend(state.temporalTaps);
+      canvas = this.blendCanvas;
+      ctx = this.blendCtx;
+    }
+
+    // --- impact warp: a lens distortion, so it runs before the lens blurs.
+    // Placed after the temporal blend on purpose: the frame history keeps
+    // storing pristine geometry frames, so Motion Blur and Ghost Trail are
+    // untouched by this addition. ---
+    if (state.warp) { canvas = this._warp(canvas, state.warp); ctx = this._stage('warp').ctx; }
+
+    // --- Group 2 remaps. Both sit after Impact Warp and before the lens blurs,
+    // so no existing stage changes position relative to any other. Like the warp
+    // they run after the history push, leaving Motion Blur and Ghost Trail with
+    // pristine geometry frames. Wave first (a distortion in the scene), then
+    // fisheye (the lens the scene is viewed through). ---
+    if (state.wave) { canvas = this._displace(canvas, state.wave); ctx = this._stage('wave').ctx; }
+    if (state.fisheye) { canvas = this._fisheye(canvas, state.fisheye); ctx = this._stage('fisheye').ctx; }
+
+    // --- spatial blurs: radial (lens/zoom) then directional ---
+    if (state.radial) { canvas = this._radial(canvas, state.radial); ctx = this._stage('radial').ctx; }
+    if (state.directional) { canvas = this._directional(canvas, state.directional); ctx = this._stage('directional').ctx; }
+
+    // --- glitch tearing, then channel separation ---
+    if (state.glitch) { canvas = this._glitch(canvas, state.glitch); ctx = this._stage('glitch').ctx; }
+    if (state.chroma) { canvas = this._chroma(canvas, state.chroma); ctx = this._stage('chroma').ctx; }
+
+    // --- depth of field: the last optical stage, so everything the lens does
+    // (blur, tearing, aberration) is already in the image, and the bloom below
+    // then glows the out-of-focus highlights the way a real lens does. ---
+    if (state.dof) { canvas = this._dof(canvas, state.dof); ctx = this._stage('dof').ctx; }
+
+    // --- light: bloom the real image, then the flare sits on top of it.
+    // Both run BEFORE flash so a white overlay never gets bloomed. ---
+    if (state.bloom) this._bloom(canvas, ctx, state.bloom);
+    if (state.flare) this._flare(ctx, state.flare);
+
+    // --- screen-space overlays ---
+    if (state.flashAlpha > 0) {
+      ctx.globalAlpha = M.clamp(state.flashAlpha, 0, 1);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, W, H);
+      ctx.globalAlpha = 1;
+    }
+    // Light wipe travels over the finished frame but under the vignette, so the
+    // edges still darken consistently as it passes.
+    if (state.lightWipe) this._lightWipe(ctx, state.lightWipe);
+    if (state.vignetteAlpha > 0) {
+      ctx.globalAlpha = M.clamp(state.vignetteAlpha, 0, 1);
+      ctx.fillStyle = this._gradient(ctx);
+      ctx.fillRect(0, 0, W, H);
+      ctx.globalAlpha = 1;
+    }
+
+    // --- pixel stage: unsharp-mask sharpen ---
+    if (state.sharpenAmount > 0) {
+      this._pixelPass(ctx, state, frameIndex || 0);
+    }
+
+    // --- hook overlay: the very last thing drawn, so the text stays crisp no
+    // matter what the frame underneath was put through ---
+    if (hookState) this._drawHook(ctx, hookState);
+
+    return canvas;
+  }
+
+  // Heavy white sans with a dark outline and drop shadow -- a social-video hook
+  // rather than a subtitle. Fully deterministic given the hook state.
+  _drawHook(ctx, hook) {
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+
+    const px = fitHookFontPx(ctx, hook.text, hook.basePx, hook.maxWidth);
+    ctx.font = HOOK_FONT_STACK.replace('{px}', String(px));
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    ctx.miterLimit = 2;
+
+    // Snap entrance scales about the text anchor so it stays centred.
+    if (hook.popScale !== 1) {
+      ctx.translate(hook.x, hook.y);
+      ctx.scale(hook.popScale, hook.popScale);
+      ctx.translate(-hook.x, -hook.y);
+    }
+
+    // Outline carries the shadow; the fill is then drawn clean on top.
+    ctx.shadowColor = 'rgba(0,0,0,0.55)';
+    ctx.shadowBlur = px * 0.25;
+    ctx.shadowOffsetY = px * 0.06;
+    ctx.lineWidth = px * 0.16;
+    ctx.strokeStyle = '#000000';
+    ctx.strokeText(hook.text, hook.x, hook.y);
+
+    ctx.shadowColor = 'rgba(0,0,0,0)';
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetY = 0;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(hook.text, hook.x, hook.y);
+
+    ctx.restore();
+  }
+
+  // Turns a normalised weight list into the successive-compositing alphas that
+  // reproduce it exactly: alpha_k = w_k / (1 - sum of the newer weights).
+  static _alphasFor(weights) {
+    const sum = weights.reduce((a, b) => a + b, 0);
+    if (!(sum > 0)) return null;
+    const w = weights.map((x) => x / sum);
+    const alphas = new Array(w.length);
+    let prefix = 0;
+    for (let k = 0; k < w.length; k++) {
+      alphas[k] = w[k] / Math.max(1e-6, 1 - prefix);
+      prefix += w[k];
+    }
+    return alphas;
+  }
+
+  // Weighted average of history frames, drawn oldest -> newest. Taps carry an
+  // explicit history index so dense Motion Blur and sparse Ghost Trail taps
+  // both work; for dense taps this is arithmetically identical to Phase 2.
+  _blend(taps) {
+    const avail = this.history.available();
+    const usable = taps.filter((t) => t.index < avail);
+    if (usable.length === 0) return;
+    const alphas = FrameRenderer._alphasFor(usable.map((t) => t.weight));
+    if (!alphas) return;
+    const ctx = this.blendCtx;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    for (let k = usable.length - 1; k >= 0; k--) {
+      ctx.globalAlpha = M.clamp(alphas[k], 0, 1);
+      ctx.drawImage(this.history.get(usable[k].index), 0, 0);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Radial zoom blur: layers scaled about the focal point. Every scale is >= 1
+  // and the focal point lies inside the frame, so each layer covers the canvas.
+  _radial(src, r) {
+    const W = this.width, H = this.height;
+    const out = this._stage('radial');
+    const ctx = out.ctx;
+    const alphas = FrameRenderer._alphasFor(r.weights);
+    if (!alphas) return src;
+    const fpx = r.fx * W, fpy = r.fy * H;
+    for (let k = r.scales.length - 1; k >= 0; k--) {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.globalAlpha = M.clamp(alphas[k], 0, 1);
+      ctx.translate(fpx, fpy);
+      ctx.scale(r.scales[k], r.scales[k]);
+      ctx.translate(-fpx, -fpy);
+      ctx.drawImage(src, 0, 0, W, H);
+    }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1;
+    return out.canvas;
+  }
+
+  // Directional blur: taps translated along one axis. Each tap is drawn into a
+  // destination rect inflated by `pad` (the largest offset), so a shifted tap
+  // can never leave an uncovered edge.
+  _directional(src, d) {
+    const W = this.width, H = this.height;
+    const out = this._stage('directional');
+    const ctx = out.ctx;
+    const alphas = FrameRenderer._alphasFor(d.weights);
+    if (!alphas) return src;
+    const pad = d.pad;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    for (let k = d.offsets.length - 1; k >= 0; k--) {
+      ctx.globalAlpha = M.clamp(alphas[k], 0, 1);
+      ctx.drawImage(src, 0, 0, W, H,
+        d.offsets[k].x - pad, d.offsets[k].y - pad, W + 2 * pad, H + 2 * pad);
+    }
+    ctx.globalAlpha = 1;
+    return out.canvas;
+  }
+
+  // Glitch burst: the untouched frame is laid down first, then displaced slices
+  // are drawn over it, so a shifted slice reveals real pixels, never a gap.
+  _glitch(src, g) {
+    const W = this.width, H = this.height;
+    const out = this._stage('glitch');
+    const ctx = out.ctx;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.drawImage(src, 0, 0);
+    for (const s of g.slices) {
+      const h = Math.min(s.h, H - s.y);
+      if (h <= 0) continue;
+      ctx.drawImage(src, 0, s.y, W, h, s.dx, s.y, W, h);
+    }
+    if (g.scan > 0) {
+      ctx.globalAlpha = M.clamp(g.scan, 0, 1);
+      ctx.fillStyle = '#000000';
+      for (let y = g.scanOffset; y < H; y += 4) ctx.fillRect(0, y, W, 1);
+      ctx.globalAlpha = 1;
+    }
+    return out.canvas;
+  }
+
+  // Chromatic aberration: isolate each channel by multiplying with a pure
+  // primary, then add the three shifted copies back together. Each channel is
+  // drawn into a rect inflated by the shift magnitude, so no channel leaves a
+  // gap at the frame edge; with zero shift this is an exact copy.
+  _chroma(src, c) {
+    const W = this.width, H = this.height;
+    const out = this._stage('chroma');
+    const scratch = this._stage('chromaScratch');
+    const pad = Math.max(Math.abs(c.dx), Math.abs(c.dy));
+    const channels = [
+      ['#ff0000', c.dx, c.dy],
+      ['#00ff00', 0, 0],
+      ['#0000ff', -c.dx, -c.dy],
+    ];
+    out.ctx.setTransform(1, 0, 0, 1, 0, 0);
+    out.ctx.globalAlpha = 1;
+    out.ctx.globalCompositeOperation = 'source-over';
+    out.ctx.fillStyle = '#000000';
+    out.ctx.fillRect(0, 0, W, H);
+    for (const [colour, ox, oy] of channels) {
+      const sctx = scratch.ctx;
+      sctx.setTransform(1, 0, 0, 1, 0, 0);
+      sctx.globalAlpha = 1;
+      sctx.globalCompositeOperation = 'source-over';
+      sctx.drawImage(src, 0, 0, W, H, ox - pad, oy - pad, W + 2 * pad, H + 2 * pad);
+      sctx.globalCompositeOperation = 'multiply';
+      sctx.fillStyle = colour;
+      sctx.fillRect(0, 0, W, H);
+      sctx.globalCompositeOperation = 'source-over';
+      out.ctx.globalCompositeOperation = 'lighter';
+      out.ctx.drawImage(scratch.canvas, 0, 0);
+    }
+    out.ctx.globalCompositeOperation = 'source-over';
+    return out.canvas;
+  }
+
+  /* ---------------- Group 1 stages ---------------- */
+
+  // Impact Warp: per-pixel inverse radial map with bilinear sampling.
+  // For a destination pixel at radius r the source radius is r*f with f <= 1,
+  // so every sample comes from INSIDE the frame -- a bulge physically cannot
+  // pull in empty pixels. Coordinates are clamped as a second guarantee.
+  _warp(src, w) {
+    const W = this.width, H = this.height;
+    const out = this._stage('warp');
+    const octx = out.ctx;
+    octx.setTransform(1, 0, 0, 1, 0, 0);
+    octx.globalAlpha = 1;
+    octx.globalCompositeOperation = 'source-over';
+    octx.drawImage(src, 0, 0);
+
+    // Only the disc is touched; everything outside it is already correct.
+    const r = w.radiusPx;
+    const x0 = Math.max(0, Math.floor(w.cx - r));
+    const x1 = Math.min(W, Math.ceil(w.cx + r));
+    const y0 = Math.max(0, Math.floor(w.cy - r));
+    const y1 = Math.min(H, Math.ceil(w.cy + r));
+    if (x1 <= x0 || y1 <= y0) return out.canvas;
+
+    const region = octx.getImageData(x0, y0, x1 - x0, y1 - y0);
+    const dst = region.data;
+    const rw = x1 - x0, rh = y1 - y0;
+    if (!this.warpSrcBuf || this.warpSrcBuf.length !== dst.length) {
+      this.warpSrcBuf = new Uint8ClampedArray(dst.length);
+    }
+    const buf = this.warpSrcBuf;
+    buf.set(dst);
+
+    const invR = 1 / r;
+    for (let y = 0; y < rh; y++) {
+      const py = y0 + y;
+      const dy = py - w.cy;
+      for (let x = 0; x < rw; x++) {
+        const px = x0 + x;
+        const dxp = px - w.cx;
+        const dist = Math.sqrt(dxp * dxp + dy * dy) * invR;
+        if (dist >= 1) continue;
+        const falloff = (1 - dist * dist);
+        const f = 1 - w.amount * falloff * falloff;
+        // Source position, always at or inside the destination radius.
+        let sx = w.cx + dxp * f - x0;
+        let sy = w.cy + dy * f - y0;
+        sx = sx < 0 ? 0 : (sx > rw - 1 ? rw - 1 : sx);
+        sy = sy < 0 ? 0 : (sy > rh - 1 ? rh - 1 : sy);
+        const ix = Math.floor(sx), iy = Math.floor(sy);
+        const fx = sx - ix, fy = sy - iy;
+        const ix1 = ix + 1 < rw ? ix + 1 : ix;
+        const iy1 = iy + 1 < rh ? iy + 1 : iy;
+        const i00 = (iy * rw + ix) * 4, i10 = (iy * rw + ix1) * 4;
+        const i01 = (iy1 * rw + ix) * 4, i11 = (iy1 * rw + ix1) * 4;
+        const w00 = (1 - fx) * (1 - fy), w10 = fx * (1 - fy);
+        const w01 = (1 - fx) * fy, w11 = fx * fy;
+        const o = (y * rw + x) * 4;
+        dst[o] = buf[i00] * w00 + buf[i10] * w10 + buf[i01] * w01 + buf[i11] * w11;
+        dst[o + 1] = buf[i00 + 1] * w00 + buf[i10 + 1] * w10 + buf[i01 + 1] * w01 + buf[i11 + 1] * w11;
+        dst[o + 2] = buf[i00 + 2] * w00 + buf[i10 + 2] * w10 + buf[i01 + 2] * w01 + buf[i11 + 2] * w11;
+      }
+    }
+    octx.putImageData(region, x0, y0);
+    return out.canvas;
+  }
+
+  // Displacement / Wave Warp: per-pixel inverse displacement by a travelling
+  // transverse wave plus a weaker longitudinal ripple.
+  //
+  // BORDER PROOF. Each displacement component is bounded by amp*1.10 = maxComp.
+  // The field is multiplied by a taper that reaches 1 only at distance taperW =
+  // 2*maxComp from the edge, using smoothstep. For a pixel d from the edge the
+  // applied displacement is at most maxComp*smoothstep(d/(2*maxComp)), and
+  // smoothstep(x) <= 2x on [0,1] (its maximum of smoothstep(x)/2x is 0.5625 at
+  // x = 0.75), so the displacement never exceeds d. A sample therefore cannot
+  // cross the border. Coordinates are clamped as a second, independent guarantee.
+  _displace(src, wv) {
+    const W = this.width, H = this.height;
+    const out = this._stage('wave');
+    const octx = out.ctx;
+    octx.setTransform(1, 0, 0, 1, 0, 0);
+    octx.globalAlpha = 1;
+    octx.globalCompositeOperation = 'source-over';
+    octx.drawImage(src, 0, 0);
+
+    const img = octx.getImageData(0, 0, W, H);
+    const dst = img.data;
+    if (!this.waveSrcBuf || this.waveSrcBuf.length !== dst.length) {
+      this.waveSrcBuf = new Uint8ClampedArray(dst.length);
+    }
+    const buf = this.waveSrcBuf;
+    buf.set(dst);
+
+    const amp = wv.amp;
+    const maxComp = amp * 1.10;
+    const invTaper = 1 / (2 * maxComp);
+    // The horizontal taper depends only on x, so it is built once per frame
+    // rather than recomputed for every pixel of every row.
+    if (!this.waveTaperX || this.waveTaperX.length !== W) this.waveTaperX = new Float64Array(W);
+    const taperX = this.waveTaperX;
+    for (let x = 0; x < W; x++) taperX[x] = M.smoothstep(Math.min(x, W - 1 - x) * invTaper);
+
+    const cx = W / 2, cy = H / 2;
+    const ax = Math.cos(wv.angle), ay = Math.sin(wv.angle);
+    // Fold the table scale into the wave numbers so the inner loop is an index.
+    const k1s = wv.k1 * SIN_LUT_SCALE, k2s = wv.k2 * SIN_LUT_SCALE;
+    const ph = wv.phase * SIN_LUT_SCALE;
+    // Phase terms are constant for the whole frame; computing them per pixel was
+    // three million multiplies at 720p for the same two numbers. Same values,
+    // same operations -- only evaluated once.
+    const ph131 = ph * 1.31, ph083 = ph * 0.83 + 850;
+
+    for (let y = 0; y < H; y++) {
+      const ty = M.smoothstep(Math.min(y, H - 1 - y) * invTaper);
+      const ry = y - cy;
+      const rowOff = y * W;
+      if (ty <= 0) continue;                       // untouched band at top/bottom
+      for (let x = 0; x < W; x++) {
+        const taper = taperX[x] * ty;
+        if (taper <= 0) continue;                  // dst already holds this pixel
+        const rx = x - cx;
+        const sAxis = rx * ax + ry * ay;           // along the travel direction
+        const qAxis = ry * ax - rx * ay;           // across it
+        const w1 = SIN_LUT[(k1s * sAxis + ph) & SIN_LUT_MASK];
+        const w2 = SIN_LUT[(k2s * qAxis - ph131) & SIN_LUT_MASK];
+        const w3 = SIN_LUT[(k2s * qAxis * 1.3 + ph083) & SIN_LUT_MASK];
+        const d = amp * (0.72 * w1 + 0.28 * w2);   // transverse, |d| <= amp
+        const dl = amp * 0.35 * w3;                // longitudinal ripple
+        let sx = x + (dl * ax - d * ay) * taper;
+        let sy = y + (dl * ay + d * ax) * taper;
+        sx = sx < 0 ? 0 : (sx > W - 1 ? W - 1 : sx);
+        sy = sy < 0 ? 0 : (sy > H - 1 ? H - 1 : sy);
+        const ix = sx | 0, iy = sy | 0;
+        const fx = sx - ix, fy = sy - iy;
+        const ix1 = ix + 1 < W ? ix + 1 : ix;
+        const iy1 = iy + 1 < H ? iy + 1 : iy;
+        const i00 = (iy * W + ix) * 4, i10 = (iy * W + ix1) * 4;
+        const i01 = (iy1 * W + ix) * 4, i11 = (iy1 * W + ix1) * 4;
+        const w00 = (1 - fx) * (1 - fy), w10 = fx * (1 - fy);
+        const w01 = (1 - fx) * fy, w11 = fx * fy;
+        const o = (rowOff + x) * 4;
+        dst[o] = buf[i00] * w00 + buf[i10] * w10 + buf[i01] * w01 + buf[i11] * w11;
+        dst[o + 1] = buf[i00 + 1] * w00 + buf[i10 + 1] * w10 + buf[i01 + 1] * w01 + buf[i11 + 1] * w11;
+        dst[o + 2] = buf[i00 + 2] * w00 + buf[i10 + 2] * w10 + buf[i01 + 2] * w01 + buf[i11 + 2] * w11;
+      }
+    }
+    octx.putImageData(img, 0, 0);
+    return out.canvas;
+  }
+
+  // Radial profile for the fisheye: f(rn) = tan(rn*atan(K)) / (K*rn), the source
+  // radius as a fraction of the destination radius. Rebuilt only when K changes,
+  // which for a held window is once every few frames rather than per pixel.
+  _fisheyeLut(k) {
+    if (this.feLut && this.feLutK === k) return this.feLut;
+    const n = FISHEYE_LUT_N;
+    const t = new Float64Array(n);
+    const a = Math.atan(k);
+    t[0] = a / k;                                  // limit as rn -> 0
+    for (let i = 1; i < n; i++) {
+      const rn = i / (n - 1);
+      t[i] = Math.tan(rn * a) / (k * rn);
+    }
+    this.feLut = t;
+    this.feLutK = k;
+    return t;
+  }
+
+  // Per-pixel position on the radial profile, in LUT index units. Invariant for
+  // a given frame size, so it is built once and reused for every later frame and
+  // every strength. One Float64Array of W*H (7.4MB at 720p), allocated only when
+  // the fisheye actually runs.
+  _fisheyeRadiusMap(cx, cy, lastIdx) {
+    const W = this.width, H = this.height;
+    if (this.feRadiusMap && this.feRadiusW === W && this.feRadiusH === H) return this.feRadiusMap;
+    const map = new Float64Array(W * H);
+    const rMax = Math.sqrt(cx * cx + cy * cy);
+    for (let y = 0; y < H; y++) {
+      const dy = y - cy;
+      const dy2 = dy * dy;
+      const rowOff = y * W;
+      for (let x = 0; x < W; x++) {
+        const dx = x - cx;
+        let rn = Math.sqrt(dx * dx + dy2) / rMax;
+        if (rn > 1) rn = 1;
+        map[rowOff + x] = rn * lastIdx;
+      }
+    }
+    this.feRadiusMap = map;
+    this.feRadiusW = W;
+    this.feRadiusH = H;
+    return map;
+  }
+
+  // Fisheye / Barrel Distortion: global radial remap about the frame centre.
+  // Because f(rn) <= 1 for every rn in [0,1] and f(1) = 1 exactly, the source
+  // radius is never larger than the destination radius and the corner maps to
+  // itself -- the centre swells, nothing is cropped, no corner can go black.
+  // Distances are real pixel distances, so the distortion is circular in both
+  // portrait and landscape rather than stretched by the aspect ratio.
+  _fisheye(src, fe) {
+    const W = this.width, H = this.height;
+    const out = this._stage('fisheye');
+    const octx = out.ctx;
+    octx.setTransform(1, 0, 0, 1, 0, 0);
+    octx.globalAlpha = 1;
+    octx.globalCompositeOperation = 'source-over';
+    octx.drawImage(src, 0, 0);
+
+    const img = octx.getImageData(0, 0, W, H);
+    const dst = img.data;
+    if (!this.feSrcBuf || this.feSrcBuf.length !== dst.length) {
+      this.feSrcBuf = new Uint8ClampedArray(dst.length);
+    }
+    const buf = this.feSrcBuf;
+    buf.set(dst);
+
+    const cx = W / 2, cy = H / 2;
+    const lut = this._fisheyeLut(fe.k);
+    const lastIdx = FISHEYE_LUT_N - 1;
+    // Each pixel's position on the radial profile depends only on the frame
+    // geometry, never on the strength or the timestamp, so the square root and
+    // divide behind it are done once per resolution instead of once per pixel
+    // per frame. Float64 keeps the index bit-for-bit what the inline version
+    // produced -- Float32 would perturb the interpolation and could shift a
+    // rounded output byte.
+    const radiusIdx = this._fisheyeRadiusMap(cx, cy, lastIdx);
+
+    for (let y = 0; y < H; y++) {
+      const dy = y - cy;
+      const rowOff = y * W;
+      for (let x = 0; x < W; x++) {
+        const dx = x - cx;
+        const fi = radiusIdx[rowOff + x];
+        const i0 = fi | 0;
+        const i1 = i0 < lastIdx ? i0 + 1 : lastIdx;
+        const f = lut[i0] + (lut[i1] - lut[i0]) * (fi - i0);
+        let sx = cx + dx * f;
+        let sy = cy + dy * f;
+        sx = sx < 0 ? 0 : (sx > W - 1 ? W - 1 : sx);
+        sy = sy < 0 ? 0 : (sy > H - 1 ? H - 1 : sy);
+        const ix = sx | 0, iy = sy | 0;
+        const fx = sx - ix, fy = sy - iy;
+        const ix1 = ix + 1 < W ? ix + 1 : ix;
+        const iy1 = iy + 1 < H ? iy + 1 : iy;
+        const i00 = (iy * W + ix) * 4, i10 = (iy * W + ix1) * 4;
+        const i01 = (iy1 * W + ix) * 4, i11 = (iy1 * W + ix1) * 4;
+        const w00 = (1 - fx) * (1 - fy), w10 = fx * (1 - fy);
+        const w01 = (1 - fx) * fy, w11 = fx * fy;
+        const o = (rowOff + x) * 4;
+        dst[o] = buf[i00] * w00 + buf[i10] * w10 + buf[i01] * w01 + buf[i11] * w11;
+        dst[o + 1] = buf[i00 + 1] * w00 + buf[i10 + 1] * w10 + buf[i01 + 1] * w01 + buf[i11 + 1] * w11;
+        dst[o + 2] = buf[i00 + 2] * w00 + buf[i10 + 2] * w10 + buf[i01 + 2] * w01 + buf[i11 + 2] * w11;
+      }
+    }
+    octx.putImageData(img, 0, 0);
+    return out.canvas;
+  }
+
+  // Depth of Field / Focus Blur, shared with Focus Pull -- the two differ only in
+  // where the focus centre is, so they are one pass here.
+  // Reuses the bloom pyramid trick: blur by downscaling and scaling back up with
+  // deterministic bilinear drawImage, never a per-pixel convolution. The blurred
+  // layer then has the in-focus region erased out of it with a smooth radial
+  // gradient, so the transition has no hard circular edge, and it is laid over
+  // the sharp frame. Nothing samples outside the canvas, so no border can open.
+  _dof(src, d) {
+    const W = this.width, H = this.height;
+    const div = M.clamp(d.div, 1.6, DOF_DIV_MAX);
+    const bw = Math.max(2, Math.round(W / div));
+    const bh = Math.max(2, Math.round(H / div));
+    const hw = Math.max(1, Math.round(bw / 2));
+    const hh = Math.max(1, Math.round(bh / 2));
+
+    const small = this._stage('dofSmall');
+    const tmp = this._stage('dofTmp');
+    if (small.canvas.width !== bw || small.canvas.height !== bh) {
+      small.canvas.width = bw; small.canvas.height = bh;
+    }
+    if (tmp.canvas.width !== hw || tmp.canvas.height !== hh) {
+      tmp.canvas.width = hw; tmp.canvas.height = hh;
+    }
+    const sctx = small.ctx, tctx = tmp.ctx;
+    sctx.setTransform(1, 0, 0, 1, 0, 0);
+    sctx.globalAlpha = 1;
+    sctx.globalCompositeOperation = 'source-over';
+    sctx.drawImage(src, 0, 0, W, H, 0, 0, bw, bh);
+    // One more down/up pass softens the box edges the first downscale leaves.
+    tctx.setTransform(1, 0, 0, 1, 0, 0);
+    tctx.globalAlpha = 1;
+    tctx.globalCompositeOperation = 'source-over';
+    tctx.drawImage(small.canvas, 0, 0, bw, bh, 0, 0, hw, hh);
+    sctx.drawImage(tmp.canvas, 0, 0, hw, hh, 0, 0, bw, bh);
+
+    const layer = this._stageAlpha('dofLayer');
+    const lctx = layer.ctx;
+    lctx.setTransform(1, 0, 0, 1, 0, 0);
+    lctx.globalAlpha = 1;
+    lctx.globalCompositeOperation = 'copy';   // replaces the previous frame outright
+    lctx.drawImage(small.canvas, 0, 0, bw, bh, 0, 0, W, H);
+    lctx.globalCompositeOperation = 'destination-out';
+    // Erase the blur where the picture should be sharp. Alpha 1 keeps the frame
+    // fully sharp, alpha 0 keeps the blur fully. Sampling a smoothstep gives a
+    // falloff with zero slope at both ends, so neither the edge of the sharp core
+    // nor the start of the fully-blurred area reads as a circle.
+    const rOuter = Math.max(1, d.radiusPx * DOF_FALLOFF);
+    const inner = 1 / DOF_FALLOFF;
+    const g = lctx.createRadialGradient(d.cx, d.cy, 0, d.cx, d.cy, rOuter);
+    g.addColorStop(0, 'rgba(0,0,0,1)');
+    for (let i = 0; i <= DOF_FALLOFF_STOPS; i++) {
+      const f = i / DOF_FALLOFF_STOPS;
+      g.addColorStop(inner + (1 - inner) * f, 'rgba(0,0,0,' + (1 - M.smoothstep(f)).toFixed(5) + ')');
+    }
+    lctx.fillStyle = g;
+    lctx.fillRect(0, 0, W, H);
+    lctx.globalCompositeOperation = 'source-over';
+
+    const out = this._stage('dof');
+    const octx = out.ctx;
+    octx.setTransform(1, 0, 0, 1, 0, 0);
+    octx.globalAlpha = 1;
+    octx.globalCompositeOperation = 'source-over';
+    octx.drawImage(src, 0, 0);
+    octx.drawImage(layer.canvas, 0, 0);
+    return out.canvas;
+  }
+
+  // Glow / Bloom: bright-pass at 1/4 size, pyramid-blurred with plain
+  // drawImage scaling (deterministic bilinear), then added back.
+  _bloom(src, ctx, bloom) {
+    const W = this.width, H = this.height;
+    const bw = Math.max(2, Math.round(W / BLOOM_DOWNSCALE));
+    const bh = Math.max(2, Math.round(H / BLOOM_DOWNSCALE));
+    const small = this._stage('bloomSmall');
+    const blur = this._stage('bloomBlur');
+    if (small.canvas.width !== bw || small.canvas.height !== bh) {
+      small.canvas.width = bw; small.canvas.height = bh;
+      blur.canvas.width = bw; blur.canvas.height = bh;
+    }
+    const sctx = small.ctx;
+    sctx.setTransform(1, 0, 0, 1, 0, 0);
+    sctx.globalAlpha = 1;
+    sctx.globalCompositeOperation = 'source-over';
+    sctx.drawImage(src, 0, 0, W, H, 0, 0, bw, bh);
+
+    // Keep only what is brighter than the threshold, scaled back up to full range.
+    const img = sctx.getImageData(0, 0, bw, bh);
+    const d = img.data;
+    const thr = BLOOM_THRESHOLD * 255;
+    const gain = 255 / (255 - thr);
+    for (let i = 0; i < d.length; i += 4) {
+      const luma = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+      if (luma <= thr) { d[i] = 0; d[i + 1] = 0; d[i + 2] = 0; continue; }
+      const k = ((luma - thr) * gain) / luma;
+      d[i] = d[i] * k; d[i + 1] = d[i + 1] * k; d[i + 2] = d[i + 2] * k;
+    }
+    sctx.putImageData(img, 0, 0);
+
+    // Two down/up passes spread the light smoothly without a convolution.
+    const bctx = blur.ctx;
+    bctx.setTransform(1, 0, 0, 1, 0, 0);
+    bctx.globalAlpha = 1;
+    bctx.globalCompositeOperation = 'source-over';
+    const qw = Math.max(1, Math.round(bw / 4)), qh = Math.max(1, Math.round(bh / 4));
+    bctx.drawImage(small.canvas, 0, 0, bw, bh, 0, 0, qw, qh);
+    sctx.drawImage(blur.canvas, 0, 0, qw, qh, 0, 0, bw, bh);
+    bctx.drawImage(small.canvas, 0, 0, bw, bh, 0, 0, qw, qh);
+    sctx.drawImage(blur.canvas, 0, 0, qw, qh, 0, 0, bw, bh);
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = M.clamp(bloom.strength, 0, 1);
+    ctx.drawImage(small.canvas, 0, 0, bw, bh, 0, 0, W, H);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  // Lens Flare: procedural core, streak and ghosts. No artwork, no randomness.
+  _flare(ctx, flare) {
+    const W = this.width, H = this.height;
+    const short = Math.min(W, H);
+    const a = M.clamp(flare.strength, 0, 1);
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalCompositeOperation = 'lighter';
+
+    // Core
+    const coreR = short * 0.22;
+    const core = ctx.createRadialGradient(flare.x, flare.y, 0, flare.x, flare.y, coreR);
+    core.addColorStop(0, 'rgba(255,252,235,' + (0.95 * a).toFixed(4) + ')');
+    core.addColorStop(0.25, 'rgba(255,238,200,' + (0.35 * a).toFixed(4) + ')');
+    core.addColorStop(1, 'rgba(255,230,180,0)');
+    ctx.fillStyle = core;
+    ctx.fillRect(flare.x - coreR, flare.y - coreR, coreR * 2, coreR * 2);
+
+    // Horizontal streak
+    const streakW = W * 0.9, streakH = Math.max(2, short * 0.012);
+    const streak = ctx.createLinearGradient(flare.x - streakW / 2, 0, flare.x + streakW / 2, 0);
+    streak.addColorStop(0, 'rgba(255,240,210,0)');
+    streak.addColorStop(0.5, 'rgba(255,248,225,' + (0.55 * a).toFixed(4) + ')');
+    streak.addColorStop(1, 'rgba(255,240,210,0)');
+    ctx.fillStyle = streak;
+    ctx.fillRect(flare.x - streakW / 2, flare.y - streakH / 2, streakW, streakH);
+
+    // Ghosts along the axis through the frame centre
+    const vx = W / 2 - flare.x, vy = H / 2 - flare.y;
+    const ghosts = [[0.4, 0.30, 'rgba(180,220,255,'], [0.75, 0.22, 'rgba(255,200,180,'], [1.18, 0.34, 'rgba(200,255,220,']];
+    for (const [pos, size, colour] of ghosts) {
+      const gx = flare.x + vx * 2 * pos, gy = flare.y + vy * 2 * pos;
+      const gr = short * size * 0.16;
+      const g = ctx.createRadialGradient(gx, gy, 0, gx, gy, gr);
+      g.addColorStop(0, colour + (0.30 * a).toFixed(4) + ')');
+      g.addColorStop(0.7, colour + (0.10 * a).toFixed(4) + ')');
+      g.addColorStop(1, colour + '0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(gx - gr, gy - gr, gr * 2, gr * 2);
+    }
+    ctx.restore();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+  }
+
+  // Light Wipe: an additive band of light travelling across the frame.
+  _lightWipe(ctx, wipe) {
+    const W = this.width, H = this.height;
+    const horizontal = wipe.direction === 'left' || wipe.direction === 'right';
+    const span = horizontal ? W : H;
+    // `position` runs from before one edge to past the other.
+    const forward = wipe.direction === 'right' || wipe.direction === 'down';
+    const p = forward ? wipe.position : 1 - wipe.position;
+    const centre = p * span;
+    const band = span * 0.45;
+    const x0 = horizontal ? centre - band : 0;
+    const y0 = horizontal ? 0 : centre - band;
+    const x1 = horizontal ? centre + band : 0;
+    const y1 = horizontal ? 0 : centre + band;
+    const a = M.clamp(wipe.intensity, 0, 1);
+
+    const grad = ctx.createLinearGradient(x0, y0, x1, y1);
+    grad.addColorStop(0.00, 'rgba(255,250,235,0)');
+    grad.addColorStop(0.35, 'rgba(255,248,230,' + (0.45 * a).toFixed(4) + ')');
+    grad.addColorStop(0.50, 'rgba(255,255,248,' + a.toFixed(4) + ')');
+    grad.addColorStop(0.65, 'rgba(255,248,230,' + (0.45 * a).toFixed(4) + ')');
+    grad.addColorStop(1.00, 'rgba(255,250,235,0)');
+
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+  }
+
+  // Pixel pass: unsharp-mask sharpen. Pure integer arithmetic on the pixel
+  // buffer, so it is bit-exact on every run.
+  _pixelPass(ctx, state, frameIndex) {
+    const W = this.width, H = this.height;
+    const img = ctx.getImageData(0, 0, W, H);
+    const d = img.data;
+
+    if (state.sharpenAmount > 0) {
+      const a = state.sharpenAmount;
+      const centre = 1 + 4 * a;
+      if (!this.sharpenBuf || this.sharpenBuf.length !== d.length) {
+        this.sharpenBuf = new Uint8ClampedArray(d.length);
+      }
+      const buf = this.sharpenBuf;
+      buf.set(d);
+      const rowBytes = W * 4;
+      for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+          const i = y * rowBytes + x * 4;
+          for (let ch = 0; ch < 3; ch++) {
+            const p = i + ch;
+            // Edge pixels replicate themselves, so borders stay clean.
+            const up = y > 0 ? buf[p - rowBytes] : buf[p];
+            const dn = y < H - 1 ? buf[p + rowBytes] : buf[p];
+            const lf = x > 0 ? buf[p - 4] : buf[p];
+            const rt = x < W - 1 ? buf[p + 4] : buf[p];
+            d[p] = centre * buf[p] - a * (up + dn + lf + rt);
+          }
+        }
+      }
+    }
+
+
+    ctx.putImageData(img, 0, 0);
+  }
+}
+
+/* =========================================================================
+   MODULE: Render pipeline (encoding / export)
+   input -> source-time mapping -> decoded frame -> effect stack -> encoder
+   -> WebM muxer.  Output frame i always carries timestamp i/fps, so wall
+   clock delays can change how long a render takes but never what it
+   contains.
+   ========================================================================= */
+function estimateBitrate(width, height, fps) {
+  const bitsPerPixelPerFrame = 0.10;
+  return Math.max(500000, Math.round(width * height * fps * bitsPerPixelPerFrame));
+}
+
+async function renderPipeline({ video, meta, effects, outputFps, timeMap, hook, onProgress }) {
+  if (typeof VideoEncoder === 'undefined' || typeof VideoFrame === 'undefined') {
+    throw new Error('WebCodecs VideoEncoder is not available in this browser. Video Effects Lab requires a recent desktop Chrome.');
+  }
+  const width = meta.width, height = meta.height;
+  const encoderConfig = {
+    codec: 'vp8',
+    width,
+    height,
+    bitrate: estimateBitrate(width, height, outputFps),
+    framerate: outputFps,
+  };
+  const support = await VideoEncoder.isConfigSupported(encoderConfig);
+  if (!support.supported) throw new Error('This browser cannot encode VP8 at ' + width + 'x' + height + ' via WebCodecs.');
+
+  const totalFrames = Math.max(1, Math.round(timeMap.outputDuration * outputFps));
+  const frameDurationUs = Math.round(1e6 / outputFps);
+  const muxer = new WebMMuxer({ width, height, codecId: 'V_VP8', durationMs: timeMap.outputDuration * 1000 });
+
+  const renderer = new FrameRenderer(width, height);
+  // Frame history is shared by Motion Blur and Ghost Trail; size it to the
+  // deepest tap either of them can reach. The ring starts empty on every
+  // render, so no frame can survive from a previous export.
+  let historyDepth = 0;
+  for (const fx of effects) {
+    if (!fx.enabled) continue;
+    if (fx.type === 'motionBlur') historyDepth = Math.max(historyDepth, EffectMath.maxBlurTaps(fx.params.intensity));
+    if (fx.type === 'ghostTrail') historyDepth = Math.max(historyDepth, EffectMath.ghostDepth(fx.params));
+  }
+  if (historyDepth > 0) renderer.enableHistory(historyDepth);
+
+  let encodeError = null;
+  const encoder = new VideoEncoder({
+    output: (chunk) => {
+      const data = new Uint8Array(chunk.byteLength);
+      chunk.copyTo(data);
+      muxer.addFrame(data, chunk.timestamp, chunk.type === 'key');
+    },
+    error: (e) => { encodeError = e; },
+  });
+  encoder.configure(encoderConfig);
+
+  video.pause();
+  const keyframeInterval = Math.max(1, Math.round(outputFps * 2));
+  const lastValidTime = Math.max(0, meta.duration - (1 / outputFps) / 2);
+
+  try {
+    for (let i = 0; i < totalFrames; i++) {
+      if (encodeError) throw encodeError;
+
+      // Output frame index -> output time -> source time. Nothing here reads a clock.
+      const outputTime = i / outputFps;
+      const rawSourceTime = M.clamp(timeMap.sourceTimeAt(outputTime), 0, lastValidTime);
+      // Posterize / Temporal Step snaps the source time to a coarser grid, so
+      // several output frames fetch the same source frame. It runs here, before
+      // the seek, so the whole frame -- picture and every other effect alike --
+      // holds together, and the time map, frame count and clip length are all
+      // left exactly as they were.
+      const sourceTime = M.clamp(computeSourceTime(effects, rawSourceTime), 0, lastValidTime);
+
+      await seekVideoTo(video, sourceTime);
+
+      const state = computeFrameState(effects, sourceTime, width, height, i);
+      // The hook is a screen overlay: it follows output time, so a Freeze or
+      // Speed Ramp never stretches or shifts it.
+      const hookState = computeHookState(hook, outputTime, width, height);
+      const canvas = renderer.render(video, state, i, hookState);
+
+      if (encoder.encodeQueueSize > 8) {
+        await new Promise((resolve) => {
+          const onDequeue = () => { encoder.removeEventListener('dequeue', onDequeue); resolve(); };
+          encoder.addEventListener('dequeue', onDequeue);
+        });
+      }
+
+      const frame = new VideoFrame(canvas, { timestamp: i * frameDurationUs, duration: frameDurationUs });
+      encoder.encode(frame, { keyFrame: i % keyframeInterval === 0 });
+      frame.close();
+
+      if (onProgress) onProgress((i + 1) / totalFrames);
+    }
+
+    await encoder.flush();
+  } finally {
+    if (encoder.state !== 'closed') encoder.close();
+  }
+  if (encodeError) throw encodeError;
+
+  return { blob: muxer.finalize(), frames: totalFrames, duration: timeMap.outputDuration };
+}
+
+/* =========================================================================
+   MODULE: UI state
+   ========================================================================= */
+const sourceVideo = document.getElementById('sourceVideo');
+const processedVideo = document.getElementById('processedVideo');
+const fileInput = document.getElementById('fileInput');
+const previewBtn = document.getElementById('previewBtn');
+const exportBtn = document.getElementById('exportBtn');
+const addEffectBtn = document.getElementById('addEffectBtn');
+const addEffectType = document.getElementById('addEffectType');
+
+let meta = null;
+// Identifies the loaded clip for the render cache. Bumped on every load, so two
+// different files can never share a cache entry even if name, size and duration
+// happen to match.
+let currentSourceKey = null;
+let sourceLoadCounter = 0;
+let currentObjectURL = null;
+let processedObjectURL = null;
+let downloadObjectURL = null;
+// What the Edited player is currently showing. This is NOT a second cache: it
+// renders nothing and decides nothing, it just records which render is on screen
+// so Download can hand back that exact blob and so we can tell when the settings
+// have moved on from it. `key` is the very same RenderCache key the renderer used.
+let previewRender = null;      // { blob, key, name, frames, duration }
+let previewDownloadURL = null; // object URL over previewRender.blob, made on demand
+let busy = false;
+
+for (const [type, def] of Object.entries(EFFECT_TYPES)) {
+  const opt = document.createElement('option');
+  opt.value = type;
+  opt.textContent = def.label;
+  addEffectType.appendChild(opt);
+}
+
+function currentOutputFps() {
+  const v = parseInt(document.getElementById('outputFpsInput').value, 10);
+  return (v && v > 0) ? v : 30;
+}
+
+function currentTimeMap() {
+  return TimeMap.build(EffectStack.all(), meta ? meta.duration : 0);
+}
+
+/* ---- Hook Overlay UI state ---- */
+function currentHook() {
+  const duration = parseFloat(document.getElementById('hookDuration').value);
+  const fontPct = parseFloat(document.getElementById('hookFontPct').value);
+  return {
+    enabled: document.getElementById('hookEnabled').checked,
+    text: document.getElementById('hookText').value,
+    duration: isFinite(duration) ? duration : HOOK_DEFAULTS.duration,
+    fontPct: isFinite(fontPct) ? fontPct : HOOK_DEFAULTS.fontPct,
+  };
+}
+
+function updateHookHint() {
+  // The hook feeds the renderer, so any edit to it can date the retained preview.
+  updatePreviewDownloadState();
+  const hint = document.getElementById('hookHint');
+  const hook = currentHook();
+  if (!hook.enabled) {
+    hint.textContent = 'Off. When enabled the hook opens the video, centred and just below the middle, ' +
+      'and is drawn after every effect so it stays sharp.';
+    return;
+  }
+  if (!hook.text.trim()) {
+    hint.textContent = 'Enter the hook text — nothing is drawn while it is empty.';
+    return;
+  }
+  const px = meta ? Math.round(hook.fontPct / 100 * Math.min(meta.width, meta.height)) : null;
+  hint.textContent = 'Shows from 0.00s to ' + hook.duration.toFixed(2) + 's of the finished video' +
+    (px ? ', about ' + px + 'px tall at this resolution' : '') +
+    '. Long text is scaled down to fit, never cut.';
+}
+
+function setBusy(value) {
+  busy = value;
+  previewBtn.disabled = value || !meta;
+  exportBtn.disabled = value || !meta;
+  addEffectBtn.disabled = value || !meta;
+  fileInput.disabled = value;
+  // Held down while a render runs; the freshness check re-enables it afterwards
+  // if the finished render still matches the settings.
+  if (value) document.getElementById('downloadPreviewBtn').disabled = true;
+  else updatePreviewDownloadState();
+  document.querySelectorAll('#effectEditor input, #effectEditor select').forEach((el) => { el.disabled = value; });
+  ['hookEnabled', 'hookText', 'hookDuration', 'hookFontPct'].forEach((id) => {
+    document.getElementById(id).disabled = value;
+  });
+}
+
+/* ---- effect list rendering ---- */
+function renderEffectList() {
+  const body = document.getElementById('effectListBody');
+  const empty = document.getElementById('effectListEmpty');
+  body.textContent = '';
+  const items = EffectStack.all();
+  empty.style.display = items.length ? 'none' : 'block';
+
+  for (const fx of items) {
+    const tr = document.createElement('tr');
+    tr.className = 'clickable' + (fx.id === EffectStack.selectedId() ? ' selected' : '') + (fx.enabled ? '' : ' disabled');
+    tr.addEventListener('click', (e) => {
+      if (e.target.closest('button') || e.target.closest('input[type="checkbox"]')) return;
+      EffectStack.select(fx.id);
+      refreshEffectsUI();
+    });
+
+    const tdOn = document.createElement('td');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = fx.enabled;
+    cb.title = 'Enable / disable this effect';
+    cb.addEventListener('change', () => { fx.enabled = cb.checked; refreshEffectsUI(); });
+    tdOn.appendChild(cb);
+
+    const tdName = document.createElement('td');
+    tdName.className = 'fxname';
+    tdName.textContent = effectLabel(fx.type);
+
+    const tdTime = document.createElement('td');
+    tdTime.className = 'fxtime';
+    tdTime.textContent = fx.start.toFixed(2) + 's → ' + (fx.start + fx.duration).toFixed(2) + 's';
+
+    const tdParams = document.createElement('td');
+    tdParams.className = 'fxparams';
+    tdParams.textContent = effectSummary(fx);
+
+    const tdActions = document.createElement('td');
+    const del = document.createElement('button');
+    del.className = 'tiny danger';
+    del.textContent = 'Delete';
+    del.disabled = busy;
+    del.addEventListener('click', () => {
+      EffectStack.remove(fx.id);
+      refreshEffectsUI();
+      Log.info('Removed effect: ' + effectLabel(fx.type));
+    });
+    tdActions.appendChild(del);
+
+    tr.append(tdOn, tdName, tdTime, tdParams, tdActions);
+
+    if (meta && fx.enabled) {
+      if (fx.start >= meta.duration) tdTime.classList.add('warn');
+      else if (fx.start + fx.duration > meta.duration) tdTime.title = 'Extends past the end of the video and will be cut short.';
+    }
+    body.appendChild(tr);
+  }
+}
+
+/* ---- selected-effect editor ---- */
+function renderEffectEditor() {
+  const host = document.getElementById('effectEditor');
+  host.textContent = '';
+  const fx = EffectStack.selected();
+  if (!fx) {
+    host.className = 'editor empty';
+    host.textContent = 'Select an effect in the list to edit it.';
+    return;
+  }
+  host.className = 'editor';
+
+  const title = document.createElement('h3');
+  title.style.margin = '0 0 10px 0';
+  title.textContent = 'Editing: ' + effectLabel(fx.type);
+  host.appendChild(title);
+
+  const row = document.createElement('div');
+  row.className = 'row';
+
+  row.appendChild(numberField('Start time (s)', fx.start, 0, 0.05, (v) => {
+    fx.start = Math.max(0, v);
+    refreshEffectsUI();
+  }));
+  row.appendChild(numberField('Duration (s)', fx.duration, 0.01, 0.05, (v) => {
+    fx.duration = Math.max(0.01, v);
+    refreshEffectsUI();
+  }));
+
+  for (const p of EFFECT_TYPES[fx.type].params) {
+    if (p.type === 'number') {
+      row.appendChild(numberField(p.label, Number(fx.params[p.key]), p.min, p.step, (v) => {
+        fx.params[p.key] = M.clamp(isFinite(v) ? v : p.min, p.min, p.max);
+        refreshEffectsUI();
+      }, p.max));
+      continue;
+    }
+    const field = document.createElement('div');
+    field.className = 'field';
+    const label = document.createElement('label');
+    label.textContent = p.label;
+    const select = document.createElement('select');
+    for (const [value, text] of p.options) {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = text;
+      if (String(fx.params[p.key]) === value) opt.selected = true;
+      select.appendChild(opt);
+    }
+    select.disabled = busy;
+    select.addEventListener('change', () => { fx.params[p.key] = select.value; refreshEffectsUI(); });
+    field.append(label, select);
+    row.appendChild(field);
+  }
+  host.appendChild(row);
+
+  const hint = document.createElement('p');
+  hint.className = 'hint';
+  hint.textContent = EFFECT_TYPES[fx.type].hint;
+  host.appendChild(hint);
+
+  // Any effect declaring `focal: true` gets the direct-manipulation picker.
+  if (EFFECT_TYPES[fx.type].focal) host.appendChild(buildFocalPointControl(fx));
+}
+
+/* ---- Radial Zoom Blur focal-point picker ----
+   Renders ONE frame through the real pipeline and lets the focal point be
+   dragged on it. The crosshair is a DOM overlay on a preview canvas, entirely
+   outside the render path, so no guide can ever reach the exported video. */
+function buildFocalPointControl(fx) {
+  const wrap = document.createElement('div');
+  wrap.className = 'focal-wrap';
+
+  const title = document.createElement('label');
+  title.textContent = 'Focal point — drag the crosshair (guides are editor-only and never exported)';
+  title.style.fontSize = '12px';
+  title.style.color = 'var(--muted)';
+  wrap.appendChild(title);
+
+  if (!meta) {
+    const note = document.createElement('p');
+    note.className = 'hint';
+    note.textContent = 'Load a video to place the focal point.';
+    wrap.appendChild(note);
+    return wrap;
+  }
+
+  const stage = document.createElement('div');
+  stage.className = 'focal-stage';
+  const displayW = Math.min(420, meta.width);
+  const displayH = Math.round(displayW * meta.height / meta.width);
+  stage.style.width = displayW + 'px';
+  stage.style.height = displayH + 'px';
+
+  const canvas = document.createElement('canvas');
+  canvas.width = displayW;
+  canvas.height = displayH;
+  canvas.className = 'focal-canvas';
+  stage.appendChild(canvas);
+
+  const marker = document.createElement('div');
+  marker.className = 'focal-marker';
+  stage.appendChild(marker);
+
+  function placeMarker() {
+    marker.style.left = (M.clamp(Number(fx.params.focusX), 0, 1) * 100) + '%';
+    marker.style.top = (M.clamp(Number(fx.params.focusY), 0, 1) * 100) + '%';
+  }
+  placeMarker();
+
+  const status = document.createElement('p');
+  status.className = 'hint';
+  wrap.append(stage, status);
+
+  function setFromEvent(e) {
+    const rect = stage.getBoundingClientRect();
+    fx.params.focusX = M.clamp((e.clientX - rect.left) / rect.width, 0, 1);
+    fx.params.focusY = M.clamp((e.clientY - rect.top) / rect.height, 0, 1);
+    placeMarker();
+  }
+
+  let dragging = false;
+  stage.addEventListener('pointerdown', (e) => {
+    if (busy) return;
+    dragging = true;
+    setFromEvent(e);
+    // Capture keeps the drag alive outside the box, but it is only an
+    // enhancement -- never let it stop the point from being set.
+    try { stage.setPointerCapture(e.pointerId); } catch (err) { /* not supported */ }
+    e.preventDefault();
+  });
+  stage.addEventListener('pointermove', (e) => { if (dragging) setFromEvent(e); });
+  stage.addEventListener('pointerup', (e) => {
+    if (!dragging) return;
+    dragging = false;
+    setFromEvent(e);
+    try { stage.releasePointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+    renderFocalStill(fx, canvas, status);
+    renderEffectList();
+  });
+
+  renderFocalStill(fx, canvas, status);
+  return wrap;
+}
+
+// Renders a single frame at the effect's peak through the SAME pipeline used by
+// preview and export, so the focal preview shows the real result.
+let focalStillToken = 0;
+async function renderFocalStill(fx, canvas, status) {
+  if (!meta || busy) return;
+  const token = ++focalStillToken;
+  status.textContent = 'Rendering focal preview…';
+  try {
+    const effects = EffectStack.snapshot();
+    const outputFps = currentOutputFps();
+    const timeMap = TimeMap.build(effects, meta.duration);
+    const peak = M.clamp(fx.start + fx.duration / 2, 0, Math.max(0, meta.duration - (1 / outputFps) / 2));
+    const frameIndex = Math.round(timeMap.outputTimeAt(peak) * outputFps);
+
+    await seekVideoTo(sourceVideo, peak);
+    if (token !== focalStillToken) return;
+
+    const renderer = new FrameRenderer(meta.width, meta.height);
+    const state = computeFrameState(effects, peak, meta.width, meta.height, frameIndex);
+    const hookState = computeHookState(currentHook(), timeMap.outputTimeAt(peak), meta.width, meta.height);
+    const rendered = renderer.render(sourceVideo, state, frameIndex, hookState);
+
+    const ctx = canvas.getContext('2d', { alpha: false });
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(rendered, 0, 0, canvas.width, canvas.height);
+    status.textContent = 'Showing source time ' + peak.toFixed(2) + 's with the current stack applied. ' +
+      'Focal point: ' + Number(fx.params.focusX).toFixed(2) + ', ' + Number(fx.params.focusY).toFixed(2) + '.';
+  } catch (err) {
+    status.textContent = 'Focal preview unavailable: ' + err.message;
+  }
+}
+
+function numberField(labelText, value, min, step, onChange, max) {
+  const field = document.createElement('div');
+  field.className = 'field';
+  const label = document.createElement('label');
+  label.textContent = labelText;
+  const input = document.createElement('input');
+  input.type = 'number';
+  input.min = String(min);
+  if (max !== undefined) input.max = String(max);
+  input.step = String(step);
+  input.value = String(Math.round(value * 1000) / 1000);
+  input.disabled = busy;
+  input.addEventListener('change', () => {
+    const v = parseFloat(input.value);
+    onChange(isFinite(v) ? v : min);
+  });
+  field.append(label, input);
+  return field;
+}
+
+function refreshEffectsUI() {
+  renderEffectList();
+  renderEffectEditor();
+  updateOutputDurationInfo();
+  // Effect edits, additions, removals, reordering and enable/disable all land
+  // here, so this is where the retained preview is re-checked against them.
+  updatePreviewDownloadState();
+}
+
+function updateOutputDurationInfo() {
+  const cell = document.getElementById('infoOutputDuration');
+  if (!meta) { cell.textContent = '—'; return; }
+  const map = currentTimeMap();
+  const fps = currentOutputFps();
+  const frames = Math.max(1, Math.round(map.outputDuration * fps));
+  const changed = Math.abs(map.outputDuration - meta.duration) > 0.001;
+  cell.textContent = map.outputDuration.toFixed(3) + ' s (' + frames + ' frames)' +
+    (changed ? '  — retimed from ' + meta.duration.toFixed(3) + ' s by Speed Ramp' : '');
+}
+
+/* ---- input / loading ---- */
+fileInput.addEventListener('change', async (e) => {
+  const file = e.target.files && e.target.files[0];
+  if (file) await loadFile(file);
+});
+
+async function loadFile(file) {
+  try {
+    setStatus('previewStatus', '');
+    setStatus('exportStatus', '');
+    document.getElementById('downloadArea').textContent = '';
+    document.getElementById('outputInfoTable').style.display = 'none';
+    previewBtn.disabled = true;
+    exportBtn.disabled = true;
+    addEffectBtn.disabled = true;
+
+    if (processedObjectURL) { URL.revokeObjectURL(processedObjectURL); processedObjectURL = null; }
+    processedVideo.removeAttribute('src');
+    processedVideo.load();
+    document.getElementById('processedHint').textContent = 'Not generated yet. Use "Generate Preview".';
+
+    // A new clip invalidates any held render, on screen as well as in the cache.
+    RenderCache.clear();
+    discardPreviewRender();
+    updatePreviewDownloadState();
+    sourceLoadCounter++;
+    currentSourceKey = sourceLoadCounter + ':' + file.name + ':' + file.size + ':' + file.lastModified;
+
+    if (currentObjectURL) URL.revokeObjectURL(currentObjectURL);
+    currentObjectURL = URL.createObjectURL(file); // the source file itself is only ever read
+    sourceVideo.src = currentObjectURL;
+    document.getElementById('inputHint').textContent = 'Loaded: ' + file.name + ' (' + formatBytes(file.size) + ')';
+    Log.info('Loaded file: ' + file.name + ' type=' + (file.type || 'unknown'));
+
+    meta = await Metadata.detect(file, sourceVideo);
+
+    previewBtn.disabled = false;
+    exportBtn.disabled = false;
+    addEffectBtn.disabled = false;
+    refreshEffectsUI();
+    if (EffectStack.all().length) Log.info('Existing effect stack kept for the new video; check the warnings in the list.');
+  } catch (err) {
+    meta = null;
+    Log.error('Failed to load file: ' + err.message);
+    setStatus('previewStatus', 'Failed to load file: ' + err.message, 'error');
+  }
+}
+
+/* ---- add effect ---- */
+addEffectBtn.addEventListener('click', () => {
+  if (!meta || busy) return;
+  const type = addEffectType.value;
+  const at = isFinite(sourceVideo.currentTime) ? Math.min(sourceVideo.currentTime, Math.max(0, meta.duration - 0.05)) : 0;
+  const fx = EffectStack.add(type, at);
+  Log.info('Added ' + effectLabel(type) + ' at ' + fx.start.toFixed(2) + 's (' + fx.duration.toFixed(2) + 's, ' + effectSummary(fx) + ')');
+  refreshEffectsUI();
+});
+
+document.getElementById('outputFpsInput').addEventListener('change', () => {
+  updateOutputDurationInfo();
+  updatePreviewDownloadState();
+});
+
+['hookEnabled', 'hookText', 'hookDuration', 'hookFontPct'].forEach((id) => {
+  const el = document.getElementById(id);
+  el.addEventListener('input', updateHookHint);
+  el.addEventListener('change', updateHookHint);
+});
+
+/* ---- shared render driver for Preview and Export ---- */
+/* ---- Render reuse ----
+   The renderer is a pure function of exactly these inputs: the source clip, the
+   effect stack, the hook, and the output frame rate. Everything downstream --
+   the time map, every effect evaluator, the frame history, the encoder settings
+   -- is derived from them deterministically, which is why Preview and Export
+   already produce byte-identical files (the parity tests assert it every run).
+
+   So rendering the same inputs twice is pure redundant work, and the commonest
+   flow in the app does exactly that: press Generate Preview, look at it, then
+   press Export and render all over again. Holding the last result and handing it
+   back on an exact input match removes that second render entirely. The returned
+   bytes are the same bytes the render would have produced -- nothing is
+   approximated, and any change to any input misses the key and re-renders.
+
+   Only the most recent result is kept, so at most one output blob is held. */
+const RenderCache = (() => {
+  let key = null;
+  let value = null;
+  return {
+    keyFor(sourceKey, effects, hook, outputFps, m) {
+      if (!m) return null;
+      return JSON.stringify({
+        src: sourceKey,
+        w: m.width, h: m.height, d: m.duration,
+        fps: outputFps,
+        hook,
+        fx: effects.map((f) => ({ t: f.type, s: f.start, u: f.duration, e: !!f.enabled, p: f.params })),
+      });
+    },
+    get(k) { return (k !== null && k === key) ? value : null; },
+    set(k, v) { if (k !== null) { key = k; value = v; } },
+    clear() { key = null; value = null; },
+  };
+})();
+
+async function runRender(kind, wrapId, barId, statusId) {
+  const effects = EffectStack.snapshot();
+  const outputFps = currentOutputFps();
+  const timeMap = TimeMap.build(effects, meta ? meta.duration : 0);
+  // Snapshot the hook too, so edits during a render cannot change it mid-way.
+  const hook = currentHook();
+  const { errors, warnings } = validateRender(effects, meta, outputFps, timeMap, hook);
+
+  if (errors.length) {
+    setStatus(statusId, 'Cannot render:\n  • ' + errors.join('\n  • '), 'error');
+    errors.forEach((e) => Log.error(e));
+    return null;
+  }
+  warnings.forEach((w) => Log.warn(w));
+
+  // Identical inputs to the last completed render? Then the frames would be
+  // identical too, so hand back what was already produced.
+  const cacheKey = RenderCache.keyFor(currentSourceKey, effects, hook, outputFps, meta);
+  const cached = RenderCache.get(cacheKey);
+  if (cached) {
+    document.getElementById(wrapId).style.display = 'block';
+    document.getElementById(barId).style.width = '100%';
+    Log.info(kind + ' reused the previous render of the same effect stack (nothing changed, so the frames are identical).');
+    return Object.assign({}, cached, { reused: true, elapsed: 0, warnings });
+  }
+
+  // A second <video> element decoding in the same page can, rarely, make the
+  // source element hand drawImage() a stale frame -- reproduced as a one-frame
+  // difference when an export follows a preview. The processed preview is
+  // therefore detached for the duration of the render and restored afterwards.
+  const restoreProcessedPreview = await quiesceProcessedPreview();
+
+  setBusy(true);
+  document.getElementById(wrapId).style.display = 'block';
+  const bar = document.getElementById(barId);
+  bar.style.width = '0%';
+  const activeCount = effects.filter((f) => f.enabled).length;
+  setStatus(statusId, 'Rendering ' + kind + ' (' + activeCount + ' active effect' + (activeCount === 1 ? '' : 's') + ')...');
+
+  // performance.now() here measures render duration for the user only; it never
+  // influences any effect calculation.
+  const startedAt = performance.now();
+  try {
+    const result = await renderPipeline({
+      video: sourceVideo,
+      meta,
+      effects,
+      outputFps,
+      timeMap,
+      hook,
+      onProgress: (frac) => { bar.style.width = (frac * 100).toFixed(1) + '%'; },
+    });
+    result.elapsed = (performance.now() - startedAt) / 1000;
+    result.warnings = warnings;
+    RenderCache.set(cacheKey, { blob: result.blob, frames: result.frames, duration: result.duration });
+    return result;
+  } catch (err) {
+    setStatus(statusId, kind + ' failed: ' + err.message, 'error');
+    Log.error(kind + ' failed: ' + err.message);
+    return null;
+  } finally {
+    setBusy(false);
+    sourceVideo.pause();
+    restoreProcessedPreview();
+    refreshEffectsUI();
+  }
+}
+
+// Detaches the processed-preview video so it is not decoding while we render,
+// returning a function that puts it back exactly as it was.
+async function quiesceProcessedPreview() {
+  const previousSrc = processedVideo.getAttribute('src');
+  if (!previousSrc) return () => {};
+  processedVideo.pause();
+  processedVideo.removeAttribute('src');
+  processedVideo.load(); // releases the element's decoder
+  return () => {
+    processedVideo.setAttribute('src', previousSrc);
+  };
+}
+
+/* ---- The rendered result, once, shared by Preview, Download and Export ----
+   Generate Preview runs the pipeline and keeps the WebM blob it produced. The
+   player shows that blob, Download hands back that same blob, and Export reuses
+   it through RenderCache whenever the inputs still match. Nothing here re-renders
+   or re-encodes anything. */
+
+function outputFileName() {
+  const baseName = (meta && meta.name ? meta.name : 'video').replace(/\.[^/.]+$/, '');
+  return baseName + '_effects.webm';
+}
+
+// The RenderCache key for the settings as they stand right now. Comparing it with
+// the key the on-screen preview was rendered under is what tells us whether the
+// preview still represents the current settings.
+function currentRenderKey() {
+  if (!meta) return null;
+  return RenderCache.keyFor(currentSourceKey, EffectStack.snapshot(), currentHook(), currentOutputFps(), meta);
+}
+
+function releasePreviewDownloadURL() {
+  if (previewDownloadURL) { URL.revokeObjectURL(previewDownloadURL); previewDownloadURL = null; }
+}
+
+// Drops the retained render. Called when the settings change under it or a new
+// clip is loaded, so a stale file can never be downloaded as the current output.
+function discardPreviewRender() {
+  releasePreviewDownloadURL();
+  previewRender = null;
+}
+
+// Enables Download only while the on-screen preview is the render of the current
+// settings. Anything that feeds the renderer changing makes the key move, which
+// disables Download and says why, rather than quietly serving the old file.
+function updatePreviewDownloadState() {
+  const btn = document.getElementById('downloadPreviewBtn');
+  const stale = document.getElementById('previewStaleHint');
+  if (!btn) return;
+  if (!previewRender) {
+    btn.disabled = true;
+    stale.style.display = 'none';
+    return;
+  }
+  const fresh = previewRender.key !== null && previewRender.key === currentRenderKey();
+  btn.disabled = !fresh;
+  if (fresh) {
+    stale.style.display = 'none';
+  } else {
+    stale.style.display = '';
+    stale.textContent = 'Settings have changed since this preview was rendered, so it no longer matches. ' +
+      'Generate Preview again to refresh it — the old render is not offered for download.';
+  }
+}
+
+// Hands back the blob Generate Preview produced. No render, no encode: the bytes
+// were produced once and are simply written to disk. One object URL is kept for
+// the life of this preview so repeated downloads do not leak a URL each time.
+function downloadPreviewRender() {
+  if (!previewRender) return;
+  if (previewRender.key !== currentRenderKey()) { updatePreviewDownloadState(); return; }
+  if (!previewDownloadURL) previewDownloadURL = URL.createObjectURL(previewRender.blob);
+  const link = document.createElement('a');
+  link.href = previewDownloadURL;
+  link.download = previewRender.name;
+  link.style.display = 'none';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  Log.info('Downloaded the existing preview render (' + formatBytes(previewRender.blob.size) +
+    ') — nothing was rendered again.');
+}
+
+document.getElementById('downloadPreviewBtn').addEventListener('click', downloadPreviewRender);
+
+previewBtn.addEventListener('click', async () => {
+  if (busy || !meta) return;
+  // A failed render must never leave the previous file presented as the new one,
+  // so the retained render is dropped before the attempt and only restored by a
+  // result that actually came back.
+  const previousRender = previewRender;
+  discardPreviewRender();
+  updatePreviewDownloadState();
+
+  const result = await runRender('preview', 'previewProgressWrap', 'previewProgressBar', 'previewStatus');
+  if (!result) {
+    // The render did not produce anything. Put back whatever was on screen before;
+    // if the settings have moved on, the freshness check disables Download anyway.
+    previewRender = previousRender;
+    updatePreviewDownloadState();
+    return;
+  }
+
+  // Keep the exact blob the pipeline produced. Preview plays it, Download writes
+  // it out, and Export reuses it from RenderCache under the same key.
+  previewRender = {
+    blob: result.blob,
+    key: currentRenderKey(),
+    name: outputFileName(),
+    frames: result.frames,
+    duration: result.duration,
+  };
+
+  // The old preview URL is only released once the new one is in hand, so the
+  // element is never pointed at a revoked URL.
+  const staleURL = processedObjectURL;
+  processedObjectURL = URL.createObjectURL(result.blob);
+  processedVideo.src = processedObjectURL;
+  if (staleURL) URL.revokeObjectURL(staleURL);
+
+  document.getElementById('processedHint').textContent =
+    'Rendered: ' + meta.width + 'x' + meta.height + ', ' + result.duration.toFixed(2) + 's, ' +
+    result.frames + ' frames, ' + formatBytes(result.blob.size) + ' (video only, no audio). ' +
+    'This is the finished file — "Download WebM" saves it as it is.';
+  updatePreviewDownloadState();
+
+  setStatus('previewStatus', (result.reused
+    ? 'Preview ready — reused the existing render (nothing affecting the frames has changed). This is the finished file: watch it above, then Download WebM.'
+    : 'Preview ready in ' + result.elapsed.toFixed(1) + 's. This is the finished file: watch it above, then Download WebM.') +
+    (result.warnings.length ? '\nWarnings:\n  • ' + result.warnings.join('\n  • ') : ''), 'ok');
+  Log.info('Preview rendered: ' + result.frames + ' frames, ' + formatBytes(result.blob.size) + ' in ' + result.elapsed.toFixed(1) + 's');
+});
+
+exportBtn.addEventListener('click', async () => {
+  if (busy || !meta) return;
+  document.getElementById('downloadArea').textContent = '';
+  const result = await runRender('export', 'exportProgressWrap', 'exportProgressBar', 'exportStatus');
+  if (!result) return;
+
+  // Release the previous export's URL; its link has already been removed above.
+  if (downloadObjectURL) URL.revokeObjectURL(downloadObjectURL);
+  const url = URL.createObjectURL(result.blob);
+  downloadObjectURL = url;
+  const baseName = (meta.name || 'video').replace(/\.[^/.]+$/, '');
+  const outName = baseName + '_effects.webm';
+
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = outName;
+  link.className = 'download-link';
+  link.textContent = 'Download ' + outName + ' (' + formatBytes(result.blob.size) + ')';
+  document.getElementById('downloadArea').appendChild(link);
+  link.click(); // auto-save; the link stays for a manual re-download
+
+  document.getElementById('outputInfoTable').style.display = '';
+  document.getElementById('outResolution').textContent = meta.width + ' x ' + meta.height + ' px (unchanged from source)';
+  document.getElementById('outDuration').textContent = result.duration.toFixed(3) + ' s';
+  document.getElementById('outFrames').textContent = result.frames + ' @ ' + currentOutputFps() + ' fps';
+  document.getElementById('outSize').textContent = formatBytes(result.blob.size);
+  document.getElementById('outRenderTime').textContent = result.reused
+    ? 'reused the preview render (0 s)' : result.elapsed.toFixed(1) + ' s';
+
+  setStatus('exportStatus', (result.reused
+    ? 'Export complete — reused the identical preview render, so nothing had to be rendered again. '
+    : 'Export complete in ' + result.elapsed.toFixed(1) + 's. ') +
+    'Download started automatically (use the link below if it did not). Audio is not preserved.' +
+    (result.warnings.length ? '\nWarnings:\n  • ' + result.warnings.join('\n  • ') : ''), 'ok');
+  Log.info('Export rendered: ' + result.frames + ' frames, ' + formatBytes(result.blob.size) + ' in ' + result.elapsed.toFixed(1) + 's -> ' + outName);
+});
+
+/* ---- startup ---- */
+(function checkSupport() {
+  if (typeof VideoEncoder === 'undefined' || typeof VideoFrame === 'undefined') {
+    Log.error('WebCodecs (VideoEncoder/VideoFrame) is not available. This browser cannot run Video Effects Lab. Use a recent desktop Google Chrome.');
+    setStatus('exportStatus', 'WebCodecs is not available in this browser. Please use a recent desktop Google Chrome.', 'error');
+  } else {
+    Log.info('WebCodecs available. Ready.');
+  }
+  refreshEffectsUI();
+  updateHookHint();
+})();
+
+/* Exposed for debugging and for the automated test harness. Everything here is
+   the same code the UI drives -- there is no separate test-only pipeline. */
+window.VEL = {
+  EFFECT_TYPES, EffectMath, M, TimeMap, EffectStack,
+  computeFrameState, computeSourceTime, validateRender, renderPipeline, FrameRenderer,
+  clearRenderCache: () => RenderCache.clear(),
+  coverScaleFor, hash3, mergeTemporalTaps, seekVideoTo,
+  buildRadialStreak, buildDirectionalBlur,
+  computeHookState, fitHookFontPx, HOOK_DEFAULTS,
+  HOOK_START, HOOK_VERTICAL, HOOK_SAFE_WIDTH, HOOK_POP_SECONDS, HOOK_POP_SCALE,
+  getHook: currentHook,
+  setHook(h) {
+    document.getElementById('hookEnabled').checked = !!h.enabled;
+    document.getElementById('hookText').value = h.text === undefined ? '' : h.text;
+    if (h.duration !== undefined) document.getElementById('hookDuration').value = String(h.duration);
+    if (h.fontPct !== undefined) document.getElementById('hookFontPct').value = String(h.fontPct);
+    updateHookHint();
+  },
+  getMeta: () => meta,
+  getOutputFps: currentOutputFps,
+  setEffects(list) { EffectStack.replaceAll(list); refreshEffectsUI(); },
+  isBusy: () => busy,
+};
+</script>
+</body>
+</html>

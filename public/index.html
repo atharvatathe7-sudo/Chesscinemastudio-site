@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chess Cinema Studio — tools for cinematic chess content</title>
+  <meta name="description" content="Chess Cinema Studio builds tools for turning chess ideas and games into cinematic visual content. Available now: Chess Cinema and Video Effects Lab, both running in the browser.">
+  <meta name="theme-color" content="#0f1115">
+  <link rel="canonical" href="https://chesscinemastudio.in/">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <meta property="og:title" content="Chess Cinema Studio">
+  <meta property="og:description" content="Tools for turning chess ideas and games into cinematic visual content.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://chesscinemastudio.in/">
+  <meta name="twitter:card" content="summary">
+  <link rel="stylesheet" href="styles.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    "name": "Chess Cinema Studio",
+    "url": "https://chesscinemastudio.in/",
+    "email": "hello@chesscinemastudio.in",
+    "sameAs": ["https://github.com/atharvatathe7-sudo"],
+    "description": "Tools for turning chess ideas and games into cinematic visual content."
+  }
+  </script>
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="#top">Chess Cinema <span>Studio</span></a>
+    <nav aria-label="Main">
+      <a href="#available">Available now</a>
+      <a href="#planned">Planned</a>
+      <a href="#links">GitHub</a>
+      <a href="#contact">Contact</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+  <div class="wrap hero" id="top">
+    <span class="eyebrow">Early-stage · Independent · Built in India</span>
+    <h1>Chess Cinema Studio</h1>
+    <p class="lede">Tools for turning chess ideas and games into cinematic visual content. Two tools are available today, both running in the browser.</p>
+    <a class="btn" href="/chess-cinema/">Open Chess Cinema</a>
+    <a class="btn ghost" href="/video-effects-lab/">Open Video Effects Lab</a>
+    <a class="btn ghost" href="#links">View on GitHub</a>
+  </div>
+
+  <section id="available">
+    <div class="wrap">
+      <h2>Available now</h2>
+      <p class="sub">Two standalone tools you can open and use today. Both are early versions.</p>
+
+      <div class="grid">
+
+        <article class="card">
+          <span class="tag live">Available now · early prototype</span>
+          <h3>Chess Cinema</h3>
+          <p>A cinematic chess visualization tool, built by the founder, that turns chess positions and moves into cinematic visual sequences and exportable clips.</p>
+          <ul>
+            <li>Interactive chessboard</li>
+            <li>PGN import, with a move timeline and Prev / Next / Live navigation</li>
+            <li>Play Animation to watch moves unfold</li>
+            <li>Arrows, highlights, move classification and notes</li>
+            <li>Story Targets that guide the camera framing</li>
+            <li>Cinematic capture effects</li>
+            <li>Single-move WebM export: 1080×1080, 30 fps, VP9</li>
+          </ul>
+          <p class="note">Exports one move at a time. It does not render a whole game as a single finished video. Export uses your browser's video recorder, so a recent Chromium-based browser such as Chrome is recommended.</p>
+          <p class="actions">
+            <a class="btn" href="/chess-cinema/">Open Chess Cinema</a>
+            <a class="btn ghost" href="https://github.com/atharvatathe7-sudo/Chess_13/blob/f1d4625c7f64126e70261226a9f6f82f664bf697/Chess_a-phase1c.html" rel="noopener">Source (pinned version)</a>
+          </p>
+        </article>
+
+        <article class="card">
+          <span class="tag live">Available now · early version</span>
+          <h3>Video Effects Lab</h3>
+          <p>Deterministic, frame-accurate visual effects for short clips.</p>
+          <ul>
+            <li>More than 25 effects, including Screen Shake, Punch Zoom, Speed Ramp, Freeze, Glitch Burst, Lens Flare and Whip Pan</li>
+            <li>Effect windows are anchored to source-video time</li>
+            <li>Optional hook text burned into the start of the clip</li>
+            <li>Preview, then export as WebM</li>
+            <li>Runs entirely in your browser tab; your source file is never modified</li>
+          </ul>
+          <p class="note">Works best in desktop Chrome (needs WebCodecs). Exports are video-only for now: audio is not carried over.</p>
+          <p class="actions">
+            <a class="btn" href="/video-effects-lab/">Open Video Effects Lab</a>
+            <a class="btn ghost" href="https://github.com/atharvatathe7-sudo/Video_effects_lab" rel="noopener">Source</a>
+          </p>
+        </article>
+
+      </div>
+    </div>
+  </section>
+
+  <section id="planned">
+    <div class="wrap">
+      <h2>Planned</h2>
+      <p class="sub">Not built yet.</p>
+      <div class="card">
+        <span class="tag soon">Planned</span>
+        <h3>Integrated editing workflow</h3>
+        <p>A way to bring clips from these tools into one editing workflow. Nothing of this exists yet: today the two tools are separate.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="principles">
+    <div class="wrap">
+      <h2>How the tools work</h2>
+      <div class="principles">
+        <div class="card">
+          <h3>Browser-first</h3>
+          <p>Nothing to install. Chess Cinema and Video Effects Lab run in a normal browser tab.</p>
+        </div>
+        <div class="card">
+          <h3>Your files stay on your device</h3>
+          <p>Neither tool uploads your games or clips, and neither contains analytics. Chess Cinema loads one third-party script, the chess.js library, from cdnjs.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="links">
+    <div class="wrap">
+      <h2>Code and projects</h2>
+      <p class="sub">Everything is public on GitHub.</p>
+      <ul class="linklist">
+        <li><a href="https://github.com/atharvatathe7-sudo/Chess_13/blob/f1d4625c7f64126e70261226a9f6f82f664bf697/Chess_a-phase1c.html" rel="noopener"><strong>Chess Cinema</strong><span>Source of the version hosted on this site (pinned to commit f1d4625)</span></a></li>
+        <li><a href="https://github.com/atharvatathe7-sudo/Video_effects_lab" rel="noopener"><strong>Video Effects Lab</strong><span>Source code</span></a></li>
+        <li><a href="https://github.com/atharvatathe7-sudo" rel="noopener"><strong>GitHub profile</strong><span>All projects</span></a></li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="about">
+    <div class="wrap">
+      <h2>About</h2>
+      <div class="about">
+        <p>Chess Cinema Studio is a solo, bootstrapped project from an independent builder based in India. It started as a way to make better chess videos faster.</p>
+        <p>Both tools are early and have rough edges. Feedback from chess creators and coaches is very welcome.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="contact">
+    <div class="wrap">
+      <h2>Get in touch</h2>
+      <p class="sub">Feedback, feature ideas, collaborations or questions.</p>
+      <a class="btn" href="mailto:hello@chesscinemastudio.in">hello@chesscinemastudio.in</a>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>© <span id="yr">2026</span> Chess Cinema Studio · chesscinemastudio.in</span>
+    <span>
+      <a href="privacy.html">Privacy</a>
+      <a href="terms.html">Terms</a>
+      <a href="mailto:hello@chesscinemastudio.in">Contact</a>
+    </span>
+  </div>
+</footer>
+
+<script>document.getElementById('yr').textContent = new Date().getFullYear();</script>
+</body>
+</html>

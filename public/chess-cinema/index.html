@@ -1,0 +1,3114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<!--
+  Viewport is modified to be mobile-friendly and disable browser zooming,
+  allowing our custom pinch-to-zoom to work without interference.
+-->
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+<title>Chess Cinema</title>
+<style>
+:root{
+  --bg1:#060617; --bg2:#1a0433; --panel:#081226; --accent:#4b0082; --light:#ffffff;
+  --light-text: #e6eef8;
+  --dim-text: #9fb0c9;
+}
+html,body{
+  height:100%;
+  width: 100vw;
+  margin:0;
+  padding: 0;
+  background:linear-gradient(180deg,var(--bg2),var(--bg1));
+  color:var(--light-text);
+  font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial;
+  /* overflow: hidden; */ /* Allow scrolling on the page */
+}
+.wrap{
+  max-width:980px;
+  margin:12px auto;
+  padding:12px;
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  align-items:center;
+}
+h1{margin:0;font-size:18px}
+.container{
+  display:flex;
+  gap:16px;
+  align-items:flex-start;
+  flex-wrap:wrap;
+  justify-content:center;
+  width: 100%;
+}
+.stage{
+  width:100%;
+  display:flex;
+  flex-direction: column; /* To stack status bar */
+  align-items: center;
+  justify-content:center;
+}
+.board-holder{
+  position:relative;
+  margin-bottom:18px;
+  overflow:hidden;
+  touch-action: none; /* Critical for custom pan/zoom */
+}
+.canvas-wrap{
+  position:relative;
+  width:100%;
+  height:100%;
+  transform-origin:center center;
+  /* transform is now controlled by JS (for pan/zoom) */
+}
+canvas{
+  border-radius:8px;
+  box-shadow:0 12px 40px rgba(0,0,0,0.5);
+  display:block;
+  user-select:none;
+  -webkit-user-select:none;
+}
+#overlay{
+  position:absolute;
+  left:0;
+  top:0;
+  touch-action:none;
+  z-index:30;
+}
+.panel{
+  width:360px;
+  background:var(--panel);
+  padding:12px;
+  border-radius:10px;
+  box-shadow:0 8px 26px rgba(0,0,0,0.6);
+}
+.row{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+
+/* Using the button styles from the original Chess_l.html file */
+button,select,input[type=text],input[type=color],textarea{
+  background:transparent;
+  border:1px solid rgba(255,255,255,0.06);
+  color:var(--light);
+  padding:8px;
+  border-radius:6px;
+  font-family: Inter, system-ui;
+  font-size: 14px;
+}
+button {
+  cursor: pointer;
+  background: rgba(255,255,255,0.02);
+  transition: background 0.2s;
+}
+button:hover {
+  background: rgba(255,255,255,0.08);
+}
+button:active, button.active {
+  background: var(--accent);
+}
+
+.small{font-size:13px;color:var(--dim-text)}
+.controls-flex{display:flex;gap:6px;flex-wrap:wrap}
+.playerBox{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
+.playerBox input{background:transparent;border:1px solid rgba(255,255,255,0.04);padding:6px;border-radius:6px;color:var(--light)}
+.history{max-height:160px;overflow:auto;margin-top:8px;border-top:1px dashed rgba(255,255,255,0.03);padding-top:8px}
+.hotkeys{margin-top:8px;color:var(--dim-text);font-size:13px}
+#removeToggle.active{background:var(--accent)}
+
+/* --- NEW: Status Bar Style --- */
+#status-bar {
+  width: 100%; /* Will be sized by .stage */
+  background-color: var(--panel);
+  opacity: 0.8;
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem 0.5rem 0 0;
+  font-weight: 600;
+  text-align: center;
+  z-index: 10;
+  display: none; /* Hidden by default, shown by JS */
+  border-bottom: 1px solid var(--accent);
+  box-sizing: border-box; /* Important */
+}
+
+/* --- NEW: Message Box Style --- */
+#message-box {
+  position: fixed;
+  top: -150px; /* Start off-screen */
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: #4CAF50;
+  color: white;
+  padding: 1rem 2rem;
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+  z-index: 1000;
+  transition: top 0.5s ease-out;
+  font-weight: 600;
+  display: none; /* Start hidden */
+}
+#message-box.error {
+  background-color: #F44336;
+}
+#message-box.show {
+  display: block;
+  top: 20px;
+}
+        
+/* --- NEW: Promotion Modal Style --- */
+#promotion-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0,0,0,0.7);
+  backdrop-filter: blur(5px);
+  z-index: 2000;
+  display: none; /* Hidden by default */
+  justify-content: center;
+  align-items: center;
+}
+#promotion-modal.show {
+  display: flex;
+}
+#promotion-box {
+  background-color: var(--panel);
+  border-radius: 0.5rem;
+  padding: 1.5rem;
+  border: 1px solid var(--accent);
+  display: flex;
+  gap: 1rem;
+}
+/* This button style is for the promotion modal */
+.promo-btn {
+  background-color: var(--accent);
+  color: white;
+  padding: 8px 12px;
+  border-radius: 6px;
+  text-align: center;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  border: 1px solid #7a3fb8;
+  white-space: nowrap;
+  font-size: 40px; /* Big glyphs */
+  width: 70px;
+  height: 70px;
+  line-height: 50px;
+}
+.promo-btn:hover {
+  background-color: #5e0f9b;
+}
+
+
+.zoom-overlay { position:absolute; right:8px; top:8px; z-index:80; background:rgba(0,0,0,0.28); padding:6px; border-radius:8px; }
+
+@media(min-width:980px){ 
+  .board-holder{width:600px} 
+  .stage { max-width: 600px; }
+}
+@media(max-width:720px){ 
+  .container{flex-direction:column;align-items:center} 
+  .panel{width:92vw} 
+  .stage { width: 92vw; }
+}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Chess Cinema</h1>
+    <div class="small">Final build: Full rules, cinematic animation, TRUE transparent export, and pinch-to-zoom.</div>
+
+    <div class="container">
+      <div class="stage" id="stage">
+        
+        <!-- NEW: Status Bar -->
+        <div id="status-bar">Loading...</div>
+
+        <div class="board-holder" id="boardHolder">
+          <div class="canvas-wrap" id="canvasWrap">
+            <canvas id="boardCanvas" aria-label="Chess board"></canvas>
+            <canvas id="overlay" aria-hidden="false"></canvas>
+          </div>
+          <div class="zoom-overlay" id="zoomHint" style="display:none;color:#e6eef8;font-size:12px">Double-tap to unzoom</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="playerBox">
+          <input id="whiteName" type="text" placeholder="White name" value="White" class="small">
+          <input id="whiteElo" type="text" placeholder="ELO" value="1600" style="width:80px" class="small">
+          <input id="whiteFlag" type="text" placeholder="🇮🇳" value="🇮🇳" style="width:56px" class="small">
+        </div>
+
+        <div class="playerBox">
+          <input id="blackName" type="text" placeholder="Black name" value="Black" class="small">
+          <input id="blackElo" type="text" placeholder="ELO" value="1650" style="width:80px" class="small">
+          <input id="blackFlag" type="text" placeholder="🇺🇸" value="🇺🇸" style="width:56px" class="small">
+        </div>
+
+        <div class="row">
+          <label>Mode:</label>
+          <select id="mode">
+            <option value="move">Move (drag)</option>
+            <option value="arrow">Draw Arrow (Shift+drag)</option>
+            <option value="highlight">Highlight (Alt+click)</option>
+            <option value="story">Story Target (click)</option>
+          </select>
+          <label>Color</label>
+          <input id="color" type="color" value="#FFC857">
+          <button id="clearAll">Clear</button>
+          <label>Capture FX</label>
+          <select id="captureFx">
+            <option value="off">Off</option>
+            <option value="dissolve" selected>Dissolve</option>
+            <option value="shatter">Shatter</option>
+            <option value="energy">Energy Dissolve</option>
+            <option value="implosion">Implosion</option>
+            <option value="drift">Directional Dissolve</option>
+            <option value="burst">Impact Burst</option>
+          </select>
+        </div>
+
+        <div class="row controls-flex">
+          <button id="prevMove">‹ Prev</button>
+          <button id="nextMove">Next ›</button>
+          <button id="undo">Undo</button>
+          <button id="redo">Redo</button>
+          <button id="flip">Flip</button>
+          <button id="playAnim">Play Animation</button>
+          <button id="exportAnim">Export Animation</button>
+          <button id="reset">Reset</button>
+          <button id="removeToggle">Remove Piece</button>
+        </div>
+
+        <div style="margin-top:8px">
+          <label class="small">Import PGN</label>
+          <textarea id="pgnInput" placeholder="Paste PGN from Chess.com / Lichess here, then press Import." style="width:100%;box-sizing:border-box;height:60px;"></textarea>
+          <div class="row" style="margin-top:4px;">
+            <button id="importPgn">Import PGN</button>
+            <span class="small" id="pgnStatus"></span>
+          </div>
+        </div>
+
+        <div style="margin-top:8px">
+          <label class="small">Move Timeline</label>
+          <div class="history" id="timelineList"></div>
+        </div>
+
+        <div class="row" style="flex-wrap:wrap;margin-top:4px;">
+          <span class="small" id="selectedMoveLabel">No move selected</span>
+          <button id="backToLive" style="padding:4px 8px;">Live</button>
+        </div>
+        <div class="row" style="flex-wrap:wrap;">
+          <label class="small">Classification</label>
+          <!-- One control: picking the classification also sets its
+               conventional symbol (see CLASSIFICATIONS in the script). -->
+          <select id="annotationSelect"></select>
+        </div>
+
+        <div class="row" style="flex-wrap:wrap;">
+          <!-- Story Targets: the squares the CREATOR says matter for this
+               move. The camera frames them as the move's consequence. This is
+               a statement of intent, not analysis — nothing here inspects the
+               position. Pick "Story Target" in Mode, then click squares. -->
+          <label class="small">Story targets</label>
+          <span id="storyTargetList" class="small">none</span>
+          <button id="clearStoryTargets">Clear Story Targets</button>
+        </div>
+
+        <div style="margin-top:8px">
+          <label class="small">Notes (for export)</label>
+          <textarea id="notes" style="width:100%;box-sizing: border-box;height:64px;"></textarea>
+        </div>
+
+        <label class="small">Arrows / Highlights (selected move)</label>
+        <div class="history" id="historyList"></div>
+        <div class="hotkeys">Hotkeys: M=Move, A=Arrow, H=Highlight, C=Clear, F=Flip. Space = Play.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- NEW: Message Box -->
+  <div id="message-box"></div>
+    
+  <!-- NEW: Pawn Promotion Modal -->
+  <div id="promotion-modal">
+      <div id="promotion-box">
+          <!-- Pieces will be injected by JS -->
+      </div>
+  </div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.12.0/chess.min.js"></script>
+
+<script>
+/*
+  Chess_l_final.html
+  - This is the user's trusted 'Chess_l.html' file, with fixes and upgrades.
+  - FINAL FIX (Export): Restored drawing the board/pieces to the export
+    to create a "cinematic shot" not a "transparent asset".
+  - PADDING FIX: Margin changed from 0.85 to 0.5 for tighter zoom.
+  - All other features (Pinch/Zoom, Status Bar, Pro Modal, Original Pieces) are intact.
+*/
+
+/* ---------------- CONFIG ---------------- */
+const LOGICAL_SIZE = 600;
+const PIECE_SCALE = 1.08;      // (from Chess_l.html)
+const ANIM_DURATION_MS = 1500; // (from Chess_l.html)
+const EXPORT_FPS = 30;         // (from Chess_l.html)
+const EXPORT_SIZE = 1080;      // 1080-class square export (was 720 — too low for a YouTube-bound source clip)
+// The export's working canvas is rendered at LOGICAL_SIZE * EXPORT_RENDER_SCALE
+// physical pixels (independent of the live on-screen board's resolution),
+// so cropping into a tight cinematic frame doesn't upscale an
+// already-low-resolution source — see exportLastMoveAsWebM().
+const EXPORT_RENDER_SCALE = 4;
+
+/* ---------------- DOM ---------------- */
+const boardCanvas = document.getElementById('boardCanvas');
+const overlay = document.getElementById('overlay');
+const boardHolder = document.getElementById('boardHolder');
+const canvasWrap = document.getElementById('canvasWrap');
+const zoomHint = document.getElementById('zoomHint');
+const ctx = boardCanvas.getContext('2d');
+const octx = overlay.getContext('2d');
+
+// NEW: UI DOM Elements
+const statusBar = document.getElementById('status-bar');
+const messageBox = document.getElementById('message-box');
+const promotionModal = document.getElementById('promotion-modal');
+const promotionBox = document.getElementById('promotion-box');
+
+
+/* ---------------- STATE ---------------- */
+let game = null;
+let selectedSquare = null;
+let dragging = null;
+let boardFlipped = false;
+let removeMode = false;
+// Per-ply move history (undo/redo without replacing chess.js, and a single
+// rich record per move that live animation and export both read from — see
+// buildMoveRecord() and syncTransientMoveState() below). Arrows/highlights
+// live on each record (record.arrows / record.highlights) instead of in a
+// global array — see getActiveRecord() — so they're move-scoped rather than
+// shown/exported on every move regardless of which move they were drawn for.
+let moveHistory = []; // append-only move records
+let historyPointer = 0; // moveHistory[0..historyPointer-1] are currently applied to `game`
+// How much of moveHistory is guaranteed to stay put even though `game`/
+// historyPointer haven't been driven that far yet (Phase 7: PGN import
+// builds the full moveHistory but starts navigation at the beginning, so
+// the imported line's plies need to be selectable/visible in the timeline
+// immediately - not just once Next has walked `game` up to them). 0 for a
+// normally-played game, where "beyond historyPointer" genuinely means
+// "undone, and may vanish if a new move branches off" - see
+// updateTimeline()'s and selectMove()'s own comments for why that distinction
+// matters. Clamped down whenever a new move truncates moveHistory, so it
+// can never claim more than actually exists.
+let importedLimit = 0;
+let lastMoveRecord = null; // always mirrors moveHistory[historyPointer-1], or null at the start position
+let animHideSquares = new Set(); // squares whose pieces are mid-flight (hide the static copy); a Set so castling can hide both the king's and rook's destination squares at once
+
+// NEW (Phase 3): timeline selection + read-only historical preview.
+// selectedPly is the ply (1-based) whose record is the current "active"
+// annotation/preview/export context — see getActiveRecord(). previewBoard,
+// when non-null, is a board() snapshot that drawPieces() renders INSTEAD of
+// the live game.board() — used only to browse/animate a historical (not the
+// latest) move without touching `game`/`historyPointer` at all.
+let selectedPly = null;
+let previewBoard = null;
+const pieceTypes = ['k','q','r','b','n','p'];
+const pieceImages = { w: {}, b: {} };
+const PIECE_LOAD_TIMEOUT = 1200;
+
+// NEW: State for Pan/Zoom
+let viewTransform = { scale: 1, panX: 0, panY: 0 };
+let isPanning = false;
+let isPinching = false;
+let lastPinchDist = 0;
+let panStart = { x: 0, y: 0 };
+let lastPan = { x: viewTransform.panX, y: viewTransform.panY };
+let activePointers = new Map(); // For multi-touch tracking
+
+// NEW: State for UI
+let promotionCallback = null; // To store the promotion choice function
+
+/* ---------------- PIECES (Chess Cinema original vector set) ----------------
+   Independently designed Staunton-inspired silhouettes, built from stacked
+   primitive shapes (rounded rects / ellipses / polygons) rather than any
+   traced or copied artwork. Same function signature/output shape as before
+   (a data-URI SVG per type+color), so the rest of the app — which already
+   shares these Image objects between live drawing and export rendering via
+   pieceImages[color][type] — needs no other changes.
+*/
+function makePieceSvgData(type, color){
+  const isWhite = color === 'w';
+  const fill = isWhite ? '#f3ecd9' : '#3c4046';
+  const stroke = isWhite ? '#2b2519' : '#101114';
+  const sw = 9;
+
+  // Shared base + stem ("trunk") every piece sits on, plus a restrained
+  // highlight/shadow accent on the stem for a touch of roundness.
+  const trunk = `
+    <rect x="182" y="518" width="236" height="42" rx="18" ry="18" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>
+    <ellipse cx="300" cy="516" rx="100" ry="12" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>
+    <rect x="250" y="438" width="100" height="82" rx="22" ry="22" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>
+    <ellipse cx="300" cy="436" rx="62" ry="11" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>
+    <ellipse cx="274" cy="478" rx="14" ry="26" fill="rgba(255,255,255,0.15)"/>
+    <ellipse cx="326" cy="478" rx="14" ry="26" fill="rgba(0,0,0,0.13)"/>
+  `;
+
+  let body = '';
+  switch(type){
+    case 'p': // pawn: shoulder dome + head ball
+      body = `
+        <ellipse cx="300" cy="378" rx="50" ry="46" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>
+        <circle cx="300" cy="298" r="58" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>
+      `;
+      break;
+    case 'b': // bishop: shoulder + tapered body + mitre dome with a bold
+              // diagonal cut (the piece's one unmistakable cue) + finial.
+              // The cut is drawn as a thick capsule in the outline colour
+              // with a thin fill-coloured edge around it, so it reads as a
+              // carved notch rather than a stray line at small size, and
+              // stays legible on both light and dark pieces.
+      body = `
+        <ellipse cx="300" cy="392" rx="58" ry="38" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>
+        <rect x="266" y="270" width="68" height="130" rx="32" ry="32" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>
+        <ellipse cx="300" cy="223" rx="47" ry="58" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>
+        <rect x="287" y="169" width="26" height="88" rx="13" fill="${stroke}" stroke="${fill}" stroke-width="4" transform="rotate(-34 300 213)"/>
+        <circle cx="300" cy="147" r="19" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>
+      `;
+      break;
+    case 'n': // knight: stylized low-poly horse head/neck, facing left, plus ear + eye
+      body = `
+        <polygon points="352,430 356,338 335,235 352,175 316,202 300,175 250,192 197,244 168,276 182,306 217,300 200,336 236,372 258,430" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" stroke-linejoin="round"/>
+        <polygon points="330,206 318,164 300,196" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" stroke-linejoin="round"/>
+        <circle cx="272" cy="228" r="9" fill="${stroke}"/>
+      `;
+      break;
+    case 'r': // rook: tower body + lintel + three crenellations
+      body = `
+        <rect x="238" y="258" width="124" height="172" rx="14" ry="14" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>
+        <rect x="232" y="248" width="136" height="20" rx="6" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>
+        <rect x="236" y="196" width="30" height="58" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>
+        <rect x="285" y="196" width="30" height="58" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>
+        <rect x="334" y="196" width="30" height="58" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>
+      `;
+      break;
+    case 'q': // queen: shoulder + body + coronet band + five-point crown
+              // with pearls. Five sharp, deeply-separated points (rather
+              // than the previous three shallow ones) is what reads as
+              // "crown" in silhouette alone at small size, distinct from
+              // the bishop's single smooth dome.
+      body = `
+        <ellipse cx="300" cy="400" rx="56" ry="34" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>
+        <rect x="258" y="268" width="84" height="140" rx="30" ry="30" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>
+        <rect x="228" y="232" width="144" height="34" rx="10" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>
+        <polygon points="228,232 240,182 257,214 272,142 288,202 300,118 312,202 328,142 343,214 360,182 372,232" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" stroke-linejoin="round"/>
+        <circle cx="240" cy="176" r="12" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>
+        <circle cx="272" cy="136" r="13" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>
+        <circle cx="300" cy="112" r="15" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>
+        <circle cx="328" cy="136" r="13" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>
+        <circle cx="360" cy="176" r="12" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>
+      `;
+      break;
+    case 'k': // king: shoulder + body + flat coronet band + cross finial
+      body = `
+        <ellipse cx="300" cy="400" rx="56" ry="34" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>
+        <rect x="258" y="268" width="84" height="140" rx="30" ry="30" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>
+        <rect x="228" y="234" width="144" height="32" rx="10" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>
+        <circle cx="300" cy="228" r="17" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>
+        <rect x="288" y="112" width="24" height="100" rx="6" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>
+        <rect x="266" y="140" width="68" height="22" rx="6" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>
+      `;
+      break;
+  }
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600">${trunk}${body}</svg>`;
+  return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+}
+
+function preloadPieceImages(cb){
+  let total = 0, loaded = 0, timed = false;
+  for(const color of ['w','b']){
+    for(const t of pieceTypes){
+      total++;
+      const img = new Image();
+      img.onload = () => { loaded++; pieceImages[color][t] = img; if(loaded === total && !timed) cb(); };
+      img.onerror = ()=>{ loaded++; pieceImages[color][t] = img; if(loaded === total && !timed) cb(); };
+      img.src = makePieceSvgData(t, color);
+    }
+  }
+  setTimeout(()=>{ if(loaded < total) { timed = true; cb(); } }, PIECE_LOAD_TIMEOUT);
+}
+
+/* ---------------- SIZING (Original Chess_l.html method) ---------------- */
+function sizeBoardExplicit(){
+  const maxW = 600;
+  // Use stage width for responsive sizing
+  const stageW = document.getElementById('stage').clientWidth;
+  const displayPx = Math.max(120, Math.min(maxW, Math.floor(stageW)));
+
+  boardHolder.style.width = displayPx + 'px';
+  boardHolder.style.height = displayPx + 'px';
+  boardCanvas.style.width = displayPx + 'px';
+  boardCanvas.style.height = displayPx + 'px';
+  overlay.style.width = displayPx + 'px';
+  overlay.style.height = displayPx + 'px';
+  
+  // Use logical size for drawing
+  boardCanvas.width = LOGICAL_SIZE;
+  boardCanvas.height = LOGICAL_SIZE;
+  overlay.width = LOGICAL_SIZE;
+  overlay.height = LOGICAL_SIZE;
+  
+  // No DPR scaling, simplifies coordinates
+  ctx.setTransform(1,0,0,1,0,0);
+  octx.setTransform(1,0,0,1,0,0);
+  
+  drawBoard();
+  redrawOverlay();
+}
+
+let fallbackAttempts = 0;
+function fallbackEnsureRender(){ sizeBoardExplicit(); fallbackAttempts++; if(fallbackAttempts < 6) setTimeout(fallbackEnsureRender, 200); }
+
+/* ---------------- CHESS ENGINE init (Original + Status Update) ---------------- */
+function readyInit(){
+  if(typeof Chess === 'function') game = new Chess();
+  else { // tiny fallback
+    console.error("Chess.js failed to load! Using fallback engine.");
+    game = {
+      _board:null,_turn:'w',
+      reset(){ const back=['r','n','b','q','k','b','n','r']; this._board=[]; this._board.push(back.map(t=>t.toLowerCase())); this._board.push(Array(8).fill('p')); for(let i=0;i<4;i++) this._board.push(Array(8).fill(null)); this._board.push(Array(8).fill('P')); this._board.push(back.map(t=>t.toUpperCase())); this._turn='w'; },
+      board(){ const arr=[]; for(let r=0;r<8;r++){ const row=[]; for(let f=0;f<8;f++){ const v=(this._board[r]&&this._board[r][f])?this._board[r][f]:null; if(!v) row.push(null); else { const color=(v===v.toUpperCase())?'w':'b'; row.push({type:v.toLowerCase(), color}); } } arr.push(row);} return arr; },
+      get(sq){ const f='abcdefgh'.indexOf(sq[0]); const r=8-parseInt(sq[1]); const v=(this._board[r]&&this._board[r][f])?this._board[r][f]:null; if(!v) return null; return {type:v.toLowerCase(), color:(v===v.toUpperCase()?'w':'b')}; },
+      move(obj){ const f1='abcdefgh'.indexOf(obj.from[0]), r1=8-parseInt(obj.from[1]); const f2='abcdefgh'.indexOf(obj.to[0]), r2=8-parseInt(obj.to[1]); const p=this._board[r1][f1]; if(!p) return null; this._board[r2][f2]=p; this._board[r1][f1]=null; this._turn=(this._turn==='w'?'b':'w'); return {from:obj.from,to:obj.to, piece: p.toLowerCase(), color: (p===p.toUpperCase()?'w':'b')}; },
+      undo(){ return null; }, moves(){ return []; }, turn(){ return this._turn; }, pgn(){ return ''; }, fen(){ return ''; }, in_check: ()=>false, in_checkmate: ()=>false, in_stalemate: ()=>false, in_draw: ()=>false,
+      remove(sq){ const f='abcdefgh'.indexOf(sq[0]); const r=8-parseInt(sq[1]); if(this._board && this._board[r]) this._board[r][f]=null; }
+    };
+  }
+  game.reset();
+  preloadPieceImages(()=>{ 
+      sizeBoardExplicit(); 
+      fallbackEnsureRender(); 
+      drawBoard(); 
+      redrawOverlay(); 
+      updateHistory(); 
+      updateStatus(); // <-- NEW: First status update
+  });
+}
+
+/* ---------------- DRAWING (MODIFIED for Pan/Zoom) ---------------- */
+// Chess Cinema board palette: muted sage-green dark squares, warm cream
+// light squares — a conventional-but-independent green chessboard, not a
+// copy of any specific reference site's exact colors.
+const darkColor = '#4f6f3c';
+const darkColorTop = '#6f9156';
+const lightColorTop = '#f1e9d8';
+const lightColorBottom = '#e2d6ba';
+
+// Shared by drawBoard() (live) and drawBoardToTemp() (export) so the two
+// renderers can never diverge on square color.
+function paintSquare(targetCtx, x, y, s, isDark){
+  const g = targetCtx.createLinearGradient(x,y,x+s,y+s);
+  if(isDark){ g.addColorStop(0,darkColorTop); g.addColorStop(1,darkColor); }
+  else { g.addColorStop(0,lightColorTop); g.addColorStop(1,lightColorBottom); }
+  targetCtx.fillStyle = g;
+  targetCtx.fillRect(x,y,s,s);
+}
+
+function drawBoard(){
+  const s = LOGICAL_SIZE/8;
+
+  ctx.save();
+  // NEW: Apply pan/zoom transform to the base canvas
+  ctx.translate(viewTransform.panX, viewTransform.panY);
+  ctx.scale(viewTransform.scale, viewTransform.scale);
+
+  ctx.clearRect(0,0,LOGICAL_SIZE,LOGICAL_SIZE);
+  for(let r=0;r<8;r++){
+    for(let f=0;f<8;f++){
+      const x = f*s, y = r*s;
+      const isDark = ((r+f)%2===1);
+      paintSquare(ctx, x, y, s, isDark);
+    }
+  }
+  drawPieces();
+  
+  ctx.restore();
+}
+
+function drawPieces(){
+  const s = LOGICAL_SIZE/8;
+  // previewBoard (set only while browsing/animating a historical, non-live
+  // move — see selectMove()/playRecordAnimation()) overrides the live game
+  // position for rendering, without ever touching `game` itself.
+  const b = previewBoard || game.board();
+  for(let r=0;r<8;r++){
+    for(let f=0;f<8;f++){
+      const p = b[r][f];
+      if(!p) continue;
+      
+      // NEW: Don't draw if dragging
+      const sq = 'abcdefgh'[f] + (8 - r);
+      if(dragging && dragging.from === sq) continue;
+      if(animHideSquares.has(sq)) continue;
+      
+      const visFile = boardFlipped ? (7 - f) : f;
+      const visRank = boardFlipped ? (7 - r) : r;
+      const centerX = visFile*s + s/2;
+      const centerY = visRank*s + s/2;
+      const img = (pieceImages[p.color] && pieceImages[p.color][p.type]) ? pieceImages[p.color][p.type] : null;
+      if(img && img.complete){
+        const w = s * PIECE_SCALE, h = s * PIECE_SCALE;
+        ctx.drawImage(img, centerX - w/2, centerY - h/2, w, h);
+      } else {
+        // (Original fallback)
+        ctx.save();
+        ctx.font = Math.floor(s*PIECE_SCALE) + 'px serif';
+        ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.fillStyle = (p.color==='w' ? '#fff' : '#0f0f0f');
+        ctx.fillText(glyphFor(p.type,p.color), centerX, centerY);
+        ctx.restore();
+      }
+    }
+  }
+}
+
+function glyphFor(type,color){
+  const map = {'p':{'w':'♙','b':'♟'}, 'r':{'w':'♖','b':'♜'}, 'n':{'w':'♘','b':'♞'}, 'b':{'w':'♗','b':'♝'}, 'q':{'w':'♕','b':'♛'}, 'k':{'w':'♔','b':'♚'}};
+  return map[type][color];
+}
+
+function roundedRectPath(c, x, y, w, h, r){
+  c.beginPath();
+  c.moveTo(x+r, y);
+  c.lineTo(x+w-r, y);
+  c.arcTo(x+w, y, x+w, y+r, r);
+  c.lineTo(x+w, y+h-r);
+  c.arcTo(x+w, y+h, x+w-r, y+h, r);
+  c.lineTo(x+r, y+h);
+  c.arcTo(x, y+h, x, y+h-r, r);
+  c.lineTo(x, y+r);
+  c.arcTo(x, y, x+r, y, r);
+  c.closePath();
+}
+
+// "Cinematic perimeter glow": a luminous border hugging the four edges of
+// the square, with a soft outer glow and a faint inner halo bleeding
+// slightly inward — the centre stays clear so the piece and board read
+// through it. A dark backing pass underneath the colour keeps the border
+// visible on both the green and cream squares (a light amber border alone
+// can wash out against cream). Shared by the live overlay and the export's
+// temp-canvas overlay so both render identically. `x,y` is the square's
+// top-left corner in the same 0..LOGICAL_SIZE space both callers already
+// use; `size` is the square width.
+function drawHighlightAt(ctxTarget, x, y, size, color){
+  const r = size * 0.10;
+  ctxTarget.save();
+
+  // 1. Dark contrast backing.
+  roundedRectPath(ctxTarget, x + size*0.045, y + size*0.045, size*0.91, size*0.91, r);
+  ctxTarget.lineWidth = size * 0.075;
+  ctxTarget.strokeStyle = 'rgba(8,7,5,0.5)';
+  ctxTarget.shadowBlur = 0;
+  ctxTarget.globalAlpha = 1;
+  ctxTarget.stroke();
+
+  // 2. Soft inner halo, inset further so it only grazes the interior.
+  roundedRectPath(ctxTarget, x + size*0.15, y + size*0.15, size*0.70, size*0.70, r*0.75);
+  ctxTarget.lineWidth = size * 0.02;
+  ctxTarget.strokeStyle = color;
+  ctxTarget.shadowColor = color;
+  ctxTarget.shadowBlur = size * 0.30;
+  ctxTarget.globalAlpha = 0.5;
+  ctxTarget.stroke();
+
+  // 3. Crisp perimeter border — the main marker, with its own outer glow.
+  roundedRectPath(ctxTarget, x + size*0.06, y + size*0.06, size*0.88, size*0.88, r);
+  ctxTarget.lineWidth = size * 0.045;
+  ctxTarget.strokeStyle = color;
+  ctxTarget.shadowColor = color;
+  ctxTarget.shadowBlur = size * 0.16;
+  ctxTarget.globalAlpha = 0.95;
+  ctxTarget.stroke();
+
+  ctxTarget.restore();
+}
+
+/* ---------------- OVERLAY (MODIFIED for Pan/Zoom) ---------------- */
+// `landed` gates the three POST-MOVE ANNOTATION graphics (highlight, arrow,
+// badge) only — everything else redrawOverlay() draws (story targets,
+// selection/legal-move dots) is unaffected. Defaults to true so every
+// existing call site (selecting a move, adding/clearing an annotation,
+// undo/redo, flip, etc.) keeps showing annotations exactly as before; the
+// ONLY caller that ever passes false is animPiece()'s own per-frame loop,
+// while its local `t` is still short of the piece's landing.
+function redrawOverlay(landed = true){
+  octx.clearRect(0,0,LOGICAL_SIZE,LOGICAL_SIZE);
+
+  octx.save();
+  // NEW: Apply pan/zoom to the overlay canvas
+  octx.translate(viewTransform.panX, viewTransform.panY);
+  octx.scale(viewTransform.scale, viewTransform.scale);
+
+  const s = LOGICAL_SIZE/8;
+  // Move-scoped: only the active record's (selected, or latest-move-by-
+  // default) arrows/highlights are shown — see getActiveRecord().
+  const activeRec = getActiveRecord();
+  const activeHighlights = activeRec ? activeRec.highlights : [];
+  const activeArrows = activeRec ? activeRec.arrows : [];
+  if(landed){
+    for(const h of activeHighlights){
+      const visFile = boardFlipped ? (7 - h.file) : h.file;
+      const visRank = boardFlipped ? (7 - h.rank) : h.rank;
+      drawHighlightAt(octx, visFile*s, visRank*s, s, h.color);
+    }
+    for(const a of activeArrows){
+      const from = squareCenter(a.from);
+      const to = a.to ? squareCenter(a.to) : {x:a.toX, y:a.toY};
+      drawArrow(octx, from, to, a.color);
+    }
+    if(activeRec && activeRec.badge){
+      drawBadgeAt(octx, activeRec.to, activeRec.badge);
+    }
+  }
+  // Story targets: an editing affordance only — a dashed ring so they read as
+  // distinct from highlights (filled) and selection (green). Deliberately NOT
+  // drawn into the export: they tell the camera what to frame, they are not
+  // an annotation the viewer should see.
+  if(activeRec){
+    for(const sq of activeRec.storyTargets){
+      const c = squareToCoords(sq);
+      octx.save();
+      octx.strokeStyle = 'rgba(120, 214, 255, 0.95)';
+      octx.lineWidth = Math.max(3, s * 0.06);
+      octx.setLineDash([s * 0.18, s * 0.12]);
+      octx.strokeRect(c.x + 5, c.y + 5, s - 10, s - 10);
+      octx.restore();
+    }
+  }
+  if(selectedSquare){
+    const c = squareToCoords(selectedSquare);
+    octx.fillStyle = 'rgba(20, 200, 20, 0.5)'; // NEW: Brighter selection
+    octx.fillRect(c.x+4, c.y+4, s-8, s-8);
+    const moves = legalMovesFromSquare(selectedSquare);
+    octx.globalAlpha = 0.4; octx.fillStyle = 'rgba(255, 255, 0, 1)'; // NEW: Brighter highlight
+    moves.forEach(m=>{ 
+        const c2 = squareToCoords(m.to);
+        octx.beginPath();
+        if(m.flags.includes('c') || m.flags.includes('p')) { // Capture
+            octx.arc(c2.x + s/2, c2.y + s/2, s * 0.45, 0, 2 * Math.PI);
+            octx.fill();
+        } else { // Normal move
+            octx.arc(c2.x + s/2, c2.y + s/2, s * 0.15, 0, 2 * Math.PI);
+            octx.fill();
+        }
+    });
+    octx.globalAlpha = 1;
+  }
+  
+  octx.restore();
+}
+
+// Cinematic annotation arrow: a substantially thicker rounded shaft and a
+// strong, slightly-softened arrowhead, sized proportionally to the board
+// square (not a fixed pixel width) so it stays readable under camera zoom,
+// on export, and at normal short-form viewing size. A dark backing pass
+// underneath the colour keeps it legible over both board colours and any
+// piece it crosses. `width` is no longer meaningful as a caller override —
+// this arrow's proportions are now always derived from the square size, so
+// callers are free to omit it.
+function drawArrow(ctxA, from, to, color){
+  if(!from || !to) return;
+  const dx = to.x - from.x, dy = to.y - from.y;
+  const dist = Math.hypot(dx, dy);
+  if(dist < 1) return;
+  const ang = Math.atan2(dy, dx);
+  const s = LOGICAL_SIZE / 8;
+  const shaftW = s * 0.085;                    // ~8.5% of square width
+  const headLen = Math.min(s * 0.26, dist * 0.6);  // ~26% of square width
+  const headW = s * 0.22;                      // ~22% of square width
+  const baseX = to.x - Math.cos(ang) * headLen, baseY = to.y - Math.sin(ang) * headLen;
+  const px = -Math.sin(ang), py = Math.cos(ang);
+
+  function headPath(){
+    ctxA.beginPath();
+    ctxA.moveTo(to.x, to.y);
+    ctxA.lineTo(baseX + px*headW/2, baseY + py*headW/2);
+    ctxA.lineTo(baseX - px*headW/2, baseY - py*headW/2);
+    ctxA.closePath();
+  }
+  function pass(strokeColor, fillColor, alpha, widthBoost){
+    ctxA.globalAlpha = alpha;
+    ctxA.lineCap = 'round';
+    ctxA.lineJoin = 'round';
+    ctxA.strokeStyle = strokeColor; ctxA.fillStyle = fillColor;
+    ctxA.lineWidth = shaftW + widthBoost;
+    ctxA.beginPath(); ctxA.moveTo(from.x, from.y); ctxA.lineTo(baseX, baseY); ctxA.stroke();
+    headPath(); ctxA.fill();
+    ctxA.lineWidth = s * 0.02; ctxA.stroke(); // soften the head's corners
+  }
+
+  ctxA.save();
+  pass('rgba(8,7,5,0.9)', 'rgba(8,7,5,0.9)', 0.32, s * 0.03); // dark backing
+  pass(color, color, 0.92, 0);                                // main arrow
+  ctxA.restore();
+}
+
+// Draws a move's badge (e.g. "!!", "?!", "#") as a small chip pinned to the
+// top-right corner of its destination square. Previously badges were only
+// ever shown as text in the side-panel timeline list — never on the board
+// itself, live or exported — which is why they had no visible effect on
+// the cinematic output. This is the single shared implementation used by
+// both redrawOverlay() (live) and the export's drawOverlayElementsToTemp(),
+// so a badge always looks identical in preview and export. squareCenter()
+// is flip-aware, so this respects board orientation automatically.
+function drawBadgeAt(targetCtx, sq, badge){
+  if(!badge) return;
+  const s = LOGICAL_SIZE/8;
+  const c = squareCenter(sq);
+  const r = s*0.22;
+  const bx = c.x + s*0.34, by = c.y - s*0.34;
+  targetCtx.save();
+  targetCtx.beginPath();
+  targetCtx.arc(bx, by, r, 0, Math.PI*2);
+  targetCtx.fillStyle = '#1a0433';
+  targetCtx.fill();
+  targetCtx.lineWidth = Math.max(2, s*0.035);
+  targetCtx.strokeStyle = '#ffffff';
+  targetCtx.stroke();
+  targetCtx.fillStyle = '#ffffff';
+  targetCtx.font = `bold ${Math.floor(s*0.24)}px Inter, system-ui, sans-serif`;
+  targetCtx.textAlign = 'center'; targetCtx.textBaseline = 'middle';
+  targetCtx.fillText(badge, bx, by + 1);
+  targetCtx.restore();
+}
+
+/* ---------------- COORD HELPERS (MODIFIED for Pan/Zoom) ---------------- */
+function getCanvasPos(evt){
+  const rect = boardCanvas.getBoundingClientRect();
+  // rect already reflects the current pan/zoom (CSS transform on an ancestor), so no further
+  // transform is needed here.
+  return {
+    x: (evt.clientX - rect.left) * (LOGICAL_SIZE / rect.width),
+    y: (evt.clientY - rect.top) * (LOGICAL_SIZE / rect.height)
+  };
+}
+function posToSquare(x,y){
+  const s = LOGICAL_SIZE/8;
+  let file = Math.floor(x / s), rank = Math.floor(y / s);
+  if(file<0||file>7||rank<0||rank>7) return null;
+  if(boardFlipped){ file = 7 - file; rank = 7 - rank; }
+  return 'abcdefgh'[file] + (8 - rank);
+}
+function squareToCoords(sq){
+  const fileIdx = 'abcdefgh'.indexOf(sq[0]); const rankIdx = 8 - parseInt(sq[1],10);
+  const s = LOGICAL_SIZE/8;
+  const visFile = boardFlipped ? (7 - fileIdx) : fileIdx;
+  const visRank = boardFlipped ? (7 - rankIdx) : rankIdx;
+  return {x: visFile * s, y: visRank * s};
+}
+function squareCenter(sq){ const c = squareToCoords(sq); const s = LOGICAL_SIZE/8; return {x: c.x + s/2, y: c.y + s/2}; }
+
+/* ---------------- CAPTURE EFFECTS (captured-piece destruction) ----------
+   Six fixed cinematic behaviours for the piece that was just taken. The
+   CAPTURING piece is never touched by any of this: it travels its normal
+   trajectory, lands normally, and is drawn on top of the effect, so a
+   capture still reads as "this piece took that one".
+
+   Everything below is a pure function of (progress, fragment index,
+   per-capture seed). No Math.random, no clock reads, no accumulated state
+   — export drives `progress` from holdIndex and the live preview from its
+   own frame counter, so both show the same beat and repeated exports of
+   the same move are identical.
+
+   Fragments are sub-rectangles of the victim's OWN image, so at progress 0
+   they reassemble it exactly: the piece is recognisably itself on the
+   landing frame and only then comes apart.
+
+   Drawing happens in the same 0..LOGICAL_SIZE board space the board uses,
+   which makes this flip-safe (squareCenter() already resolves
+   boardFlipped) and camera-safe (the export applies its crop afterwards,
+   and the camera box is never computed from anything here). */
+const CAPTURE_FX_FRAMES = 15;   // ~0.5s at EXPORT_FPS, always carved out of the existing hold
+let captureEffect = 'dissolve'; // set by the Capture FX control; 'off' disables entirely
+
+// Deterministic [0,1) from integer inputs — integer ops only, so it is
+// stable across runs, machines and idle-vs-stalled rendering.
+function fxRand(seed, i, salt){
+  let h = (seed ^ Math.imul(i + 1, 374761393) ^ Math.imul(salt + 1, 668265263)) >>> 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+// Seeded from the capture's own identity, so the same capture always
+// shatters the same way and a different one does not.
+function fxSeedFor(record, sq){
+  const s = (record.color || 'w') + (record.captured || '') + sq + ':' + (record.ply || 0);
+  let h = 2166136261 >>> 0;
+  for(let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619) >>> 0;
+  return h >>> 0;
+}
+// Per-fragment progress: each fragment waits out its own small delay before
+// it starts, which is what stops the piece coming apart as one rigid block.
+function fxStagger(p, delay){
+  const span = 1 - delay;
+  return span <= 0 ? 1 : Math.max(0, Math.min(1, (p - delay) / span));
+}
+// What a capture destroys, and the square it actually stands on. For en
+// passant that is the pawn's own square, NOT the move's destination.
+function captureVictim(record){
+  if(!record || !record.captured) return null;
+  const sq = (record.isEnPassant && record.extraVacate && record.extraVacate[0])
+    ? record.extraVacate[0] : record.to;
+  return { sq: sq, type: record.captured, color: record.color === 'w' ? 'b' : 'w' };
+}
+// Directional Dissolve drifts along the capture itself — the victim is
+// carried off the way the capturing piece came in. Taken from the move's
+// own geometry (and therefore flip-aware, since squareCenter is), so it
+// needs no configuration.
+function captureDriftDir(record){
+  const a = squareCenter(record.from), b = squareCenter(record.to);
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const len = Math.hypot(dx, dy);
+  return len < 1e-6 ? {x: 0, y: -1} : {x: dx/len, y: dy/len};
+}
+
+function drawCaptureEffect(targetCtx, effect, victim, progress, seed, dir){
+  if(!victim || !effect || effect === 'off') return;
+  const p = progress;
+  if(!(p >= 0) || p >= 1) return;          // nothing before the beat, nothing after it
+  const img = (pieceImages[victim.color] || {})[victim.type];
+  if(!img || !img.complete) return;
+
+  const s = LOGICAL_SIZE / 8;
+  const c = squareCenter(victim.sq);
+  const size = s * PIECE_SCALE;
+  // Fewer, bigger fragments read as shards; many small ones read as dust.
+  const grid = effect === 'shatter' ? 4 : effect === 'burst' ? 6 : effect === 'implosion' ? 8 : 10;
+  const cell = size / grid;
+  const src = (img.naturalWidth || 600) / grid;
+  const seam = cell * 0.04;                // hides tile seams while the piece is still whole
+
+  targetCtx.save();
+
+  // Impact Burst opens on a flash at the point of contact.
+  if(effect === 'burst'){
+    const fp = Math.min(1, p / 0.35);
+    if(fp < 1){
+      const rad = s * (0.45 + 0.95 * fp);
+      const a = (1 - fp) * 0.8;
+      const g = targetCtx.createRadialGradient(c.x, c.y, 0, c.x, c.y, rad);
+      g.addColorStop(0, 'rgba(255,248,225,' + a.toFixed(3) + ')');
+      g.addColorStop(0.55, 'rgba(255,201,120,' + (a * 0.45).toFixed(3) + ')');
+      g.addColorStop(1, 'rgba(255,170,80,0)');
+      targetCtx.save();
+      targetCtx.globalCompositeOperation = 'lighter';
+      targetCtx.fillStyle = g;
+      targetCtx.beginPath(); targetCtx.arc(c.x, c.y, rad, 0, Math.PI * 2); targetCtx.fill();
+      targetCtx.restore();
+    }
+  }
+
+  for(let gy = 0; gy < grid; gy++){
+    for(let gx = 0; gx < grid; gx++){
+      const i = gy * grid + gx;
+      const r1 = fxRand(seed, i, 1), r2 = fxRand(seed, i, 2), r3 = fxRand(seed, i, 3);
+      const fx = (gx + 0.5) * cell - size / 2;   // fragment centre, relative to the piece centre
+      const fy = (gy + 0.5) * cell - size / 2;
+      let dx = 0, dy = 0, rot = 0, sc = 1, alpha = 1, k;
+
+      if(effect === 'shatter'){
+        k = fxStagger(p, 0.10 * r1);
+        const ang = Math.atan2(fy, fx) + (r2 - 0.5) * 0.5;
+        const spd = (0.55 + 0.55 * r1) * s;
+        dx = Math.cos(ang) * spd * k;
+        dy = Math.sin(ang) * spd * k + 0.9 * s * k * k;   // shards fall as they fly
+        rot = (r2 - 0.5) * 2.4 * k;
+        sc = 1 - 0.15 * k;
+        alpha = 1 - k * k;                                 // stay solid, fade late
+      } else if(effect === 'energy'){
+        k = fxStagger(p, 0.22 * r1);
+        dx = (r2 - 0.5) * s * 0.30 * k;
+        dy = -s * 0.95 * k - r3 * 0.4 * s * k * k;
+        sc = 1 - 0.7 * k;
+        alpha = 1 - k;
+      } else if(effect === 'implosion'){
+        k = fxStagger(p, 0.08 * r1);
+        const e = k * k * (3 - 2 * k);                     // smoothstep collapse
+        dx = -fx * e; dy = -fy * e;
+        rot = (r1 < 0.5 ? -1 : 1) * 1.4 * e;
+        sc = 1 - 0.85 * e;
+        alpha = 1 - e * e * e;                             // holds together, then goes
+      } else if(effect === 'drift'){
+        const proj = (fx * dir.x + fy * dir.y) / (size / 2);
+        k = fxStagger(p, 0.30 * (0.5 - proj * 0.5));       // trailing edge leaves first
+        dx = dir.x * s * 1.25 * k + (r2 - 0.5) * cell * 0.5 * k;
+        dy = dir.y * s * 1.25 * k + (r3 - 0.5) * cell * 0.5 * k;
+        rot = (r1 - 0.5) * 0.8 * k;
+        sc = 1 - 0.45 * k;
+        alpha = 1 - k;
+      } else if(effect === 'burst'){
+        k = fxStagger(p, 0.06 * r1);
+        const ang = Math.atan2(fy, fx) + (r2 - 0.5) * 0.4;
+        const spd = (1.0 + 0.8 * r1) * s;
+        dx = Math.cos(ang) * spd * k;
+        dy = Math.sin(ang) * spd * k;
+        rot = (r2 - 0.5) * 3.0 * k;
+        sc = 1 - 0.5 * k;
+        alpha = 1 - k;
+      } else {                                             // 'dissolve' (default)
+        // Restrained, but it has to actually come APART: displacement is
+        // scaled to the SQUARE, not the fragment, and fragments shrink to
+        // near-dust, otherwise the top of a tall piece just slides upward
+        // as one recognisable block.
+        k = fxStagger(p, 0.22 * r1);
+        dx = (r2 - 0.5) * s * 0.50 * k;
+        dy = -s * 0.42 * k + (r3 - 0.5) * s * 0.28 * k;
+        rot = (r1 - 0.5) * 1.6 * k;
+        sc = 1 - 0.8 * k;
+        alpha = 1 - k;
+      }
+
+      if(alpha <= 0.004 || sc <= 0.03) continue;
+      const d = cell * sc + seam;
+      targetCtx.save();
+      targetCtx.globalAlpha = Math.max(0, Math.min(1, alpha));
+      targetCtx.translate(c.x + fx + dx, c.y + fy + dy);
+      if(rot) targetCtx.rotate(rot);
+      targetCtx.drawImage(img, gx * src, gy * src, src, src, -d/2, -d/2, d, d);
+      targetCtx.restore();
+    }
+  }
+
+  // Energy Dissolve adds rising motes so the piece reads as being erased
+  // into light rather than simply blown apart.
+  if(effect === 'energy'){
+    targetCtx.globalCompositeOperation = 'lighter';
+    for(let m = 0; m < 14; m++){
+      const r1 = fxRand(seed, m, 11), r2 = fxRand(seed, m, 12), r3 = fxRand(seed, m, 13);
+      const k = fxStagger(p, 0.15 * r1);
+      if(k <= 0 || k >= 1) continue;
+      const bx = c.x + (r2 - 0.5) * size * 0.55;
+      const by = c.y + (r3 - 0.5) * size * 0.6 - s * 1.05 * k;
+      const rad = cell * (0.55 - 0.3 * k);
+      const a = Math.sin(Math.PI * k) * 0.85;
+      if(rad <= 0 || a <= 0.01) continue;
+      const g = targetCtx.createRadialGradient(bx, by, 0, bx, by, rad);
+      g.addColorStop(0, 'rgba(198,242,255,' + a.toFixed(3) + ')');
+      g.addColorStop(1, 'rgba(120,200,255,0)');
+      targetCtx.globalAlpha = 1;
+      targetCtx.fillStyle = g;
+      targetCtx.beginPath(); targetCtx.arc(bx, by, rad, 0, Math.PI * 2); targetCtx.fill();
+    }
+  }
+
+  targetCtx.restore();
+}
+
+/* ---------------- CAMERA FRAMING (one definition) ----------------
+   Turns a set of visual subjects into a single {box, camX, camY} framing:
+   the smallest square frame, in board coordinates, containing every subject
+   square plus the usual half-square margin, centred on them.
+
+   This is THE place a set of subjects becomes a framing. The export's check
+   framing and its Story Target framing both call it, so widening rules stay
+   identical between them instead of each feature growing its own camera
+   geometry. `minBox` is a floor (never frame tighter than this); the board
+   itself is the only ceiling, so genuinely far-apart subjects are allowed to
+   open all the way out to a full-board view rather than being squeezed into
+   an unreadable crop.
+*/
+function framingForCentres(centres, minBox){
+  const s = LOGICAL_SIZE/8, margin = s * 0.5;
+  const xs = [], ys = [];
+  for(const c of centres){
+    if(!c) continue;
+    xs.push(c.x - s/2 - margin, c.x + s/2 + margin);
+    ys.push(c.y - s/2 - margin, c.y + s/2 + margin);
+  }
+  if(!xs.length) return null;
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  return {
+    box: Math.min(LOGICAL_SIZE, Math.max(maxX - minX, maxY - minY, minBox)),
+    camX: (minX + maxX) / 2,
+    camY: (minY + maxY) / 2
+  };
+}
+
+/* Story Targets: the squares the CREATOR marks as the point of this move.
+   Toggled by clicking a square in "Story Target" mode. Stored as algebraic
+   squares on the move record, so they survive selection, undo/redo, timeline
+   and PGN navigation, board flip and export. Nothing here reads the position
+   or evaluates anything — the tool does not analyse chess, it frames what the
+   creator says matters. */
+function toggleStoryTarget(record, sq){
+  const i = record.storyTargets.indexOf(sq);
+  if(i >= 0) record.storyTargets.splice(i, 1);
+  else record.storyTargets.push(sq);
+}
+
+/* ---------------- INTERACTIONS (NEW: Merged Pinch/Pan/Drag/Tap) ---------------- */
+let currentMode = 'move';
+document.getElementById('mode').addEventListener('change', e=>{ currentMode = e.target.value; });
+
+// The single colour picker stays the one manual override it always was —
+// this only changes what it's ASSUMED to mean before the viewer has ever
+// touched it. Untouched, a highlight defaults to warm amber/gold ("focus")
+// and an arrow to coral/vermilion ("action"), matching the two annotation
+// types' distinct visual language. The moment the viewer picks a colour
+// themselves, that choice is respected for everything drawn afterwards,
+// exactly as before.
+const ANNOTATION_DEFAULT_COLORS = { highlight: '#FFC857', arrow: '#E85D4A' };
+let colorPickedByUser = false;
+document.getElementById('color').addEventListener('input', ()=>{ colorPickedByUser = true; });
+function currentAnnotationColor(kind){
+  return colorPickedByUser ? document.getElementById('color').value : ANNOTATION_DEFAULT_COLORS[kind];
+}
+
+overlay.style.touchAction = 'none';
+overlay.style.pointerEvents = 'auto';
+
+overlay.addEventListener('pointerdown', onDown, {passive:false});
+overlay.addEventListener('pointermove', onMove, {passive:false});
+overlay.addEventListener('pointerup', onUp, {passive:false});
+overlay.addEventListener('pointercancel', onCancel, {passive:false});
+
+let arrowTemp = null;
+let lastTapTime = 0, lastTapSquare = null;
+
+// NEW: Helper functions for pinch-zoom
+function getPinchDist() {
+    const pointers = Array.from(activePointers.values());
+    const e1 = pointers[0], e2 = pointers[1];
+    return Math.sqrt((e1.clientX - e2.clientX)**2 + (e1.clientY - e2.clientY)**2);
+}
+function getPinchMidpoint() {
+    const pointers = Array.from(activePointers.values());
+    const e1 = pointers[0], e2 = pointers[1];
+    return { x: (e1.clientX + e2.clientX) / 2, y: (e1.clientY + e2.clientY) / 2 };
+}
+// NEW: Helper function
+function legalMovesFromSquare(sq) {
+    if (!game || typeof game.moves !== 'function') return [];
+    return game.moves({ square: sq, verbose: true });
+}
+
+function onDown(e){
+  e.preventDefault();
+  activePointers.set(e.pointerId, e);
+
+  if (activePointers.size === 2) {
+      // START PINCH
+      isPinching = true;
+      isPanning = false; dragging = null; arrowTemp = null; // Cancel other actions
+      lastPinchDist = getPinchDist();
+      panStart = getPinchMidpoint();
+      lastPan = { x: viewTransform.panX, y: viewTransform.panY };
+      return;
+  }
+  
+  if (activePointers.size > 2) return; // Ignore 3+ fingers
+  
+  const p = getCanvasPos(e); // Logical coords
+  const sq = posToSquare(p.x,p.y);
+  
+  // DOUBLE-TAP (Original logic)
+  const now = performance.now();
+  if(sq && lastTapSquare === sq && (now - lastTapTime) < 350){
+    if(viewTransform.scale > 1.1) unzoomSmooth(); else zoomToSquareSmooth(sq);
+    lastTapTime = 0; lastTapSquare = null; 
+    activePointers.clear(); // Clear pointers to prevent drag
+    return;
+  } else { 
+    lastTapTime = now; 
+    lastTapSquare = sq; 
+  }
+
+  // --- 1-Finger Actions ---
+  if(currentMode === 'arrow'){ 
+    isPanning = false; isPinching = false; dragging = null;
+    arrowTemp = {from: sq, start: p}; 
+    return; 
+  }
+  if(currentMode === 'highlight'){
+    isPanning = false; isPinching = false; dragging = null;
+    if(!sq) return;
+    const rec = getActiveRecord();
+    if(!rec){ showMessage('Make a move first to annotate it.', 'error'); return; }
+    rec.highlights.push({file:'abcdefgh'.indexOf(sq[0]), rank:8-parseInt(sq[1],10), sq: sq, color: hexToRgba(currentAnnotationColor('highlight'),1), alpha:0.28});
+    redrawOverlay();
+    updateHistory();
+    return;
+  }
+  if(currentMode === 'story'){
+    isPanning = false; isPinching = false; dragging = null;
+    if(!sq) return;
+    const rec = getActiveRecord();
+    if(!rec){ showMessage('Make a move first to give it story targets.', 'error'); return; }
+    toggleStoryTarget(rec, sq);
+    redrawOverlay();
+    updateHistory();
+    return;
+  }
+  if(removeMode && sq){
+    isPanning = false; isPinching = false; dragging = null;
+    if(previewBoard){ showMessage('Viewing a past move — select the latest move to edit the live position.', 'error'); return; }
+    try{ game.remove && game.remove(sq); }catch(e){}
+    drawBoard();
+    redrawOverlay();
+    updateHistory();
+    updateStatus(); // <-- NEW
+    return;
+  }
+
+  if(currentMode === 'move'){
+    if(previewBoard){
+      showMessage('Viewing a past move — select the latest move to continue playing.', 'error');
+      return;
+    }
+    const piece = sq ? game.get(sq) : null;
+    if(!piece) {
+        // START PAN — disabled: one-finger panning from empty space is no longer allowed.
+        // isPanning intentionally left false here; panStart/lastPan/onMove's pan branch are
+        // untouched (kept for minimal-diff reasons per Phase 1C scope).
+        isPinching = false; dragging = null;
+        panStart = { x: e.clientX, y: e.clientY };
+        lastPan = { x: viewTransform.panX, y: viewTransform.panY };
+        return;
+    }
+    
+    if(typeof game.turn === 'function' && piece.color !== game.turn()) {
+        // Clicked opponent piece, try to capture if one is selected
+        if(selectedSquare) {
+            onUp(e); // Treat as a "drop"
+        }
+        return;
+    }
+    
+    // START DRAG
+    isPanning = false; isPinching = false;
+    dragging = {from: sq, piece: piece, startPos: p};
+    selectedSquare = sq;
+    redrawOverlay();
+  }
+}
+
+function onMove(e){
+  e.preventDefault();
+  if (!activePointers.has(e.pointerId)) return;
+  activePointers.set(e.pointerId, e);
+
+  if (isPinching && activePointers.size === 2) {
+      // PINCH-TO-ZOOM
+      const newDist = getPinchDist();
+      const mid = getPinchMidpoint();
+      const scaleAmount = newDist / lastPinchDist;
+      lastPinchDist = newDist;
+
+      // Pan logic
+      const dx = mid.x - panStart.x;
+      const dy = mid.y - panStart.y;
+      const newPanX_pre = lastPan.x + dx;
+      const newPanY_pre = lastPan.y + dy;
+
+      // Zoom logic
+      const rect = boardCanvas.getBoundingClientRect();
+      const displayWidth = rect.width;
+      const displayHeight = rect.height;
+
+      // Calculate the point on the canvas (in display px) that is under the pinch center
+      const zoomX_display = mid.x - rect.left;
+      const zoomY_display = mid.y - rect.top;
+
+      // Convert this to a point in the *logical* (600x600) scaled space
+      const zoomX_logical = (zoomX_display - newPanX_pre) / viewTransform.scale;
+      const zoomY_logical = (zoomY_display - newPanY_pre) / viewTransform.scale;
+      
+      const newScale = Math.max(1, Math.min(viewTransform.scale * scaleAmount, 5));
+      
+      // Calculate the new panX/Y to keep the logical point under the pinch center
+      const newPanX = zoomX_display - (zoomX_logical * newScale);
+      const newPanY = zoomY_display - (zoomY_logical * newScale);
+      
+      // Apply transform
+      viewTransform.scale = newScale;
+      viewTransform.panX = newPanX;
+      viewTransform.panY = newPanY;
+      
+      // Apply to wrapper
+      canvasWrap.style.transform = `translate(${viewTransform.panX}px, ${viewTransform.panY}px) scale(${viewTransform.scale})`;
+      
+      // Redraw *everything* because scaling is not uniform
+      drawBoard();
+      redrawOverlay();
+      return;
+  }
+  
+  const p = getCanvasPos(e); // Logical coords
+  
+  if (isPanning) {
+      // PAN
+      const dx = e.clientX - panStart.x;
+      const dy = e.clientY - panStart.y;
+      viewTransform.panX = lastPan.x + dx;
+      viewTransform.panY = lastPan.y + dy;
+      
+      // Apply to wrapper
+      canvasWrap.style.transform = `translate(${viewTransform.panX}px, ${viewTransform.panY}px) scale(${viewTransform.scale})`;
+      
+      // No redraw needed, transform handles it
+      return;
+  }
+
+  if(arrowTemp){ 
+    redrawOverlay(); 
+    
+    // Draw arrow on overlay (needs pan/zoom)
+    octx.save();
+    octx.translate(viewTransform.panX, viewTransform.panY);
+    octx.scale(viewTransform.scale, viewTransform.scale);
+    drawArrow(octx, squareCenter(arrowTemp.from), {x:p.x,y:p.y}, currentAnnotationColor('arrow'));
+    octx.restore();
+    return; 
+  }
+  
+  if(dragging){
+    redrawOverlay();
+    const s = LOGICAL_SIZE/8;
+    const img = pieceImages[dragging.piece.color] && pieceImages[dragging.piece.color][dragging.piece.type];
+    
+    // Draw on overlay, respecting pan/zoom
+    octx.save();
+    octx.translate(viewTransform.panX, viewTransform.panY);
+    octx.scale(viewTransform.scale, viewTransform.scale);
+    
+    if(img && img.complete){
+      const w = s*PIECE_SCALE * 1.1, h = s*PIECE_SCALE * 1.1; // Slightly larger
+      octx.globalAlpha = 0.8;
+      octx.drawImage(img, p.x - w/2, p.y - h/2, w, h);
+      octx.globalAlpha = 1.0;
+    } else {
+      const glyph = glyphFor(dragging.piece.type, dragging.piece.color);
+      octx.font = Math.floor(s*PIECE_SCALE * 1.1)+'px serif';
+      octx.textAlign='center'; octx.textBaseline='middle';
+      octx.fillStyle = (dragging.piece.color==='w'?'#fff':'#0f0f0f'); 
+      octx.globalAlpha = 0.8;
+      octx.fillText(glyph, p.x, p.y);
+      octx.globalAlpha = 1.0;
+    }
+    octx.restore();
+  }
+}
+
+function onUp(e){
+  e.preventDefault();
+
+  const p = getCanvasPos(e); const sq = posToSquare(p.x,p.y);
+  
+  if(arrowTemp){
+    if(sq && sq !== arrowTemp.from){
+        const rec = getActiveRecord();
+        if(rec){ rec.arrows.push({from: arrowTemp.from, to: sq, color: currentAnnotationColor('arrow')}); updateHistory(); }
+        else { showMessage('Make a move first to annotate it.', 'error'); }
+    }
+    arrowTemp = null;
+    redrawOverlay();
+  }
+  
+  if(dragging){
+    if(sq && sq !== dragging.from){
+      const piece = dragging.piece;
+      // Check for promotion
+      if(piece.type === 'p' && (sq[1] === '8' || sq[1] === '1')){
+        // NEW: Call "Pro" modal
+        const fromSq = dragging.from; // captured now — onUp's own cleanup below clears `dragging` before this async callback runs
+        showPromotionModal(piece.color, choice => { 
+            const res = attemptMove(fromSq, sq, choice); 
+            dragging=null; selectedSquare=null; 
+            if(res) {
+                animateRecord(lastMoveRecord, ()=>{ drawBoard(); redrawOverlay(); updateHistory(); updateStatus(); });
+            } else {
+                redrawOverlay(); // Redraw to clear legal moves
+            }
+        });
+      } else {
+        const res = attemptMove(dragging.from, sq, null);
+        dragging=null; selectedSquare=null;
+        if(res) {
+            animateRecord(lastMoveRecord, ()=>{ drawBoard(); redrawOverlay(); updateHistory(); updateStatus(); });
+        } else {
+            redrawOverlay(); // Redraw to clear legal moves
+        }
+      }
+    } else {
+        // Snap back
+        dragging=null; selectedSquare=null;
+        redrawOverlay();
+    }
+  }
+
+  // Clear pointer
+  activePointers.delete(e.pointerId);
+  
+  // Reset interaction states
+  if (isPinching && activePointers.size < 2) {
+      isPinching = false;
+  }
+  if (isPanning && activePointers.size === 0) {
+      isPanning = false;
+  }
+  if (dragging && activePointers.size === 0) {
+      dragging = null;
+      selectedSquare = null;
+      redrawOverlay();
+  }
+}
+
+function onCancel(e){ 
+  e && e.preventDefault(); 
+  activePointers.clear();
+  dragging=null; 
+  arrowTemp=null; 
+  isPinching = false;
+  isPanning = false;
+  redrawOverlay(); 
+}
+
+/* ---------------- MOVE APPLY (Original + Status Update) ---------------- */
+function attemptMove(from,to,promotion){
+  const preSnapshot = JSON.parse(JSON.stringify(game.board()));
+  const movingBefore = game.get(from) ? {type: game.get(from).type, color: game.get(from).color} : null;
+
+  const moveObj = {from: from, to: to}; if(promotion) moveObj.promotion = promotion;
+  let m = null;
+  try { m = (typeof game.move === 'function') ? game.move(moveObj) : null; } catch(e){ m = null; }
+
+  if(m){
+    const record = buildMoveRecord(m, from, to, preSnapshot, movingBefore);
+    // A new move discards any redo-able future branch (standard undo/redo semantics).
+    if(historyPointer < moveHistory.length) moveHistory.length = historyPointer;
+    moveHistory.push(record);
+    historyPointer = moveHistory.length;
+    // A branch off an imported line's "known future" genuinely discards it
+    // (moveHistory.length was just truncated above), so importedLimit can
+    // never claim more than what's actually left.
+    importedLimit = Math.min(importedLimit, moveHistory.length);
+    syncTransientMoveState();
+
+    updateStatus(); // <-- NEW
+    return {from: record.from, to: record.to};
+  } else {
+    // Invalid move
+    return null;
+  }
+}
+
+/* ---------------- PER-PLY MOVE RECORD ----------------
+   One record per ply, rich enough for both live animation and export to
+   reconstruct exactly what changed — including the pieces that a naive
+   "only the from-square was vacated" assumption misses: the rook in
+   castling, and the captured pawn's square in en passant (which is not
+   the destination square). `annotation`/`badge` are reserved for a later
+   phase and intentionally left empty here.
+*/
+function buildMoveRecord(m, from, to, preSnapshot, movingBefore){
+  const flags = m.flags || '';
+  const color = m.color || (movingBefore && movingBefore.color) || 'w';
+  const pieceTypeBefore = (movingBefore && movingBefore.type) || m.piece || 'p';
+  const resultPieceType = m.promotion ? m.promotion : pieceTypeBefore;
+
+  // Castling also moves the rook; chess.js's move object only describes the
+  // king's from/to, so the rook's own squares are derived from the flag+color.
+  let secondary = null;
+  if(flags.includes('k') || flags.includes('q')){
+    const rank = color === 'w' ? '1' : '8';
+    secondary = flags.includes('k')
+      ? { from: 'h'+rank, to: 'f'+rank, type: 'r', color }
+      : { from: 'a'+rank, to: 'd'+rank, type: 'r', color };
+  }
+
+  // En passant's captured pawn sits on (destination file, origin rank) —
+  // not on the destination square itself.
+  const extraVacate = flags.includes('e') ? [ to[0] + from[1] ] : [];
+
+  // Check context (Phase 6): buildMoveRecord runs immediately AFTER
+  // game.move() applied the move, so game.in_check() describes the side to
+  // move — i.e. the side this move just put in check. Storing the king's
+  // square here lets the export frame the checking relationship without
+  // re-deriving the position later. Purely a framing input: no evaluation,
+  // no classification, nothing is drawn because of it.
+  let checkSquare = null;
+  try {
+    if(game.in_check()){
+      const checkedColor = game.turn();
+      const b = game.board();
+      for(let r=0; r<8 && !checkSquare; r++){
+        for(let f=0; f<8; f++){
+          const p = b[r][f];
+          if(p && p.type === 'k' && p.color === checkedColor){ checkSquare = 'abcdefgh'[f] + (8-r); break; }
+        }
+      }
+    }
+  } catch(e){ checkSquare = null; }
+
+  return {
+    ply: moveHistory.length + 1,
+    from: m.from || from,
+    to: m.to || to,
+    san: m.san || null,
+    color,
+    pieceType: pieceTypeBefore,       // piece type BEFORE the move (e.g. 'p' for a promoting pawn)
+    resultPieceType,                  // piece type AFTER the move (promoted piece, if any)
+    captured: m.captured || null,
+    promotion: m.promotion || null,
+    flags,
+    isCastle: !!secondary,
+    isEnPassant: flags.includes('e'),
+    preSnapshot,                      // deep-cloned board() BEFORE this move
+    secondary,                        // {from,to,type:'r',color} for castling's rook, else null
+    extraVacate,                      // squares beyond `from` that must be cleared for export (e.g. en passant)
+    checkSquare,                      // square of the king this move puts in check, else null (export framing only)
+    annotation: '',                   // human-provided (Phase 3): e.g. "Brilliant" — never computed by the app
+    badge: '',                        // human-provided (Phase 3): e.g. "!!" — never computed by the app
+    arrows: [],                       // move-scoped arrows (Phase 3): {from,to,color} — belong to THIS ply only
+    highlights: [],                   // move-scoped highlights (Phase 3): {file,rank,sq,color,alpha} — belong to THIS ply only
+    storyTargets: []                  // human-chosen camera subjects (algebraic squares) — what makes THIS move matter
+  };
+}
+
+// Keeps lastMoveRecord/animHideSquares in lockstep with historyPointer so
+// Play Animation / Export can never reference a move that isn't the current
+// position's last move (fixes stale replay/export after undo/redo). Also
+// (Phase 3) resyncs the timeline selection to "the latest move" on every
+// game-state change (new move, undo, redo, reset) and drops any historical
+// preview — so a selection can never point at a move that's been undone
+// past, and the timeline always reflects the actual current history.
+function syncTransientMoveState(){
+  animHideSquares.clear();
+  lastMoveRecord = historyPointer > 0 ? moveHistory[historyPointer - 1] : null;
+  selectedPly = historyPointer > 0 ? historyPointer : null;
+  previewBoard = null;
+}
+
+/* ---------------- TIMELINE SELECTION (Phase 3) ----------------
+   getActiveRecord() is the single source of truth for "which move is the
+   current annotation/preview/export context" — it's what redrawOverlay(),
+   arrow/highlight creation, the annotation/badge controls, Play Animation
+   and Export all consult. Defaults to the latest move so existing
+   (pre-timeline) behavior is unchanged when the user hasn't selected an
+   older move explicitly.
+*/
+function getActiveRecord(){
+  if(selectedPly && moveHistory[selectedPly - 1]) return moveHistory[selectedPly - 1];
+  if(historyPointer > 0) return moveHistory[historyPointer - 1];
+  return null;
+}
+
+// The board position immediately after `ply`, without touching `game`:
+// for the current live move this is just game.board() (signalled by
+// returning null — drawPieces() falls back to game.board() itself), and
+// for an earlier move it's borrowed from the NEXT record's preSnapshot
+// (that record's "before" is this one's "after") — avoiding storing a
+// second full board snapshot per move.
+function boardAfterPly(ply){
+  if(ply === historyPointer) return null;
+  return moveHistory[ply] ? moveHistory[ply].preSnapshot : null;
+}
+
+// A clone of `record.preSnapshot` with every square that must not show a
+// static piece once that move has LANDED cleared: the mover's origin,
+// the DESTINATION square, castling's rook origin, and en passant's
+// captured-pawn square. Shared by the historical preview path
+// (playRecordAnimation) and export, so both start an animation from the
+// identical base state.
+//
+// `to` is in that list because the arriving piece is always drawn as a
+// moving piece on top of this snapshot, never from it — so the snapshot
+// must not also carry whatever stood on `to` beforehand. For an ordinary
+// capture that "whatever" is the captured piece, and leaving it in place
+// relied on the arriving piece's own artwork happening to cover it. It
+// does not: every piece type has a different silhouette inside the same
+// bounding box, so the captured piece stayed visible around the edges of
+// the piece that took it (a pawn taking a knight left the knight's ears
+// showing). For a non-capturing move `to` is empty in preSnapshot anyway,
+// so clearing it is a no-op there.
+function vacatedSnapshot(record){
+  const snap = JSON.parse(JSON.stringify(record.preSnapshot || game.board()));
+  const squares = [record.from, record.to].concat(record.secondary ? [record.secondary.from] : []).concat(record.extraVacate || []);
+  for(const sqName of squares){
+    const f = 'abcdefgh'.indexOf(sqName[0]);
+    const r = 8 - parseInt(sqName[1]);
+    if(snap[r] && snap[r][f]) snap[r][f] = null;
+  }
+  return snap;
+}
+
+// Selects a move from the timeline for annotation/preview/export. Moves
+// within the CURRENT active line (1..historyPointer) are always selectable
+// — deliberately not the undone "redo future" beyond historyPointer for a
+// normally-played game, since this never needs to reconstruct a position
+// `game` itself can't also reach by redoing, AND that "future" may vanish
+// without notice if a new move branches off before it's redone. Imported
+// PGN plies get the same immediate selectability up to importedLimit
+// instead: unlike an undone move, they're the definitive, already-fully-
+// built line (not a stale might-be-overwritten one) until the user
+// actually plays a new move from mid-game, at which point importedLimit is
+// clamped back down (see attemptMove). Never touches `game`/`historyPointer`:
+// selecting a historical move only sets a read-only preview snapshot that
+// drawPieces() renders instead of the live position (see previewBoard above).
+function selectMove(ply){
+  if(ply < 1 || ply > Math.max(historyPointer, importedLimit)) return;
+  selectedPly = ply;
+  previewBoard = boardAfterPly(ply);
+  drawBoard();
+  redrawOverlay();
+  updateHistory(); // also refreshes the timeline + annotation panel, see below
+}
+
+/* ---------------- NEW: Upgraded Promotion UI (using Glyphs) ---------------- */
+function showPromotionModal(color, callback){
+  promotionCallback = callback; // Store the callback
+  promotionBox.innerHTML = '';
+  const pieces = ['q', 'r', 'b', 'n'];
+  pieces.forEach(p => {
+    const button = document.createElement('button');
+    button.className = 'promo-btn'; // Use new promo style
+    button.dataset.piece = p;
+    button.innerHTML = glyphFor(p, color);
+    button.onclick = () => {
+        promotionModal.classList.remove('show');
+        if (promotionCallback) promotionCallback(p);
+        promotionCallback = null;
+    };
+    promotionBox.appendChild(button);
+  });
+  promotionModal.classList.add('show');
+}
+
+
+/* ---------------- ON-SCREEN ANIMATION (MODIFIED for Pan/Zoom) ---------------- */
+// Animates a single piece from `from` to `to`. Caller supplies the exact
+// type/color to draw (instead of this function guessing it) and is
+// responsible for animHideSquares — that lets animateRecord() below drive
+// two of these in parallel for castling without them fighting over shared
+// hide-state or duration-completion bookkeeping.
+function animateMoveByPiece(from,to,type,color,durationMs,onComplete){
+  const start = squareCenter(from), end = squareCenter(to);
+  const img = (pieceImages[color] && pieceImages[color][type]) ? pieceImages[color][type] : null;
+  animPiece(type, start, end, img, durationMs, ()=>{ if(onComplete) onComplete(); });
+}
+
+// Canonical entry point for animating a move record (used by both the
+// post-move animation and "Play Animation"). Reuses the exact same
+// per-piece-type curves above — for castling it just runs the king's and
+// rook's animations in parallel, using the existing rook curve for the
+// rook, rather than introducing any new animation system.
+// A longer move covers more visual distance in the same wall-clock time,
+// which makes it read as rushed/incomplete even though the code timing is
+// identical to a short move. Scales ANIM_DURATION_MS modestly for moves
+// beyond ~2 squares of travel (capped), so a queen crossing the board gets
+// meaningfully more time to be readable without slowing down the common
+// short-move case at all. Shared by live preview (animateRecord, below)
+// AND export, so both stay on the same timing concept — see
+// exportLastMoveAsWebM(), which calls this too when no explicit duration
+// is supplied.
+function computeMoveDuration(record, baseDuration){
+  baseDuration = baseDuration || ANIM_DURATION_MS;
+  const start = squareCenter(record.from), end = squareCenter(record.to);
+  const travelSquares = Math.hypot(end.x - start.x, end.y - start.y) / (LOGICAL_SIZE/8);
+  // Phase 7: nudged from 120->150ms/square. A full-length rook/queen move
+  // (7 squares) gets 2250ms at the live base, and the longest possible move
+  // on the board (the 9.9-square a1-h8 diagonal) reaches ~2685ms. Short
+  // moves (<=2 squares) are exactly baseDuration.
+  // The cap only exists to stop a pathological distance running away; it is
+  // deliberately above every reachable value at BOTH bases in use, so it
+  // never truncates a real move: at the live base (1500) the longest move is
+  // 2685ms, and at the export base (EXPORT_MOVEMENT_BASE_MS, 2000) it is
+  // 3185ms. Raising it from 2800 therefore changes no live duration at all —
+  // live could never reach 2800 in the first place — and only stops the
+  // export's larger base from being clipped, which would have truncated
+  // exactly the long moves the export most needs to show in full.
+  const BASE_SQUARES = 2, EXTRA_MS_PER_SQUARE = 150, MAX_DURATION_MS = 3400;
+  const scaled = baseDuration + Math.max(0, travelSquares - BASE_SQUARES) * EXTRA_MS_PER_SQUARE;
+  return Math.round(Math.min(MAX_DURATION_MS, Math.max(baseDuration, scaled)));
+}
+
+// Live-preview counterpart of the export's capture beat: same
+// drawCaptureEffect(), same CAPTURE_FX_FRAMES budget, same frame-index
+// progression — only the surface differs (overlay canvas here, export temp
+// canvas there), which is what keeps preview and export showing the same
+// thing. onComplete still fires at LANDING, so annotations, history and
+// status update exactly when they always did; the effect is drawn after it
+// in the same tick, so the arriving piece never blinks.
+function runCaptureEffectPreview(record, victim, toHide, onComplete){
+  const seed = fxSeedFor(record, victim.sq);
+  const dir = captureDriftDir(record);
+  const end = squareCenter(record.to);
+  const landedImg = (pieceImages[record.color] || {})[record.resultPieceType] || null;
+  const secEnd = record.secondary ? squareCenter(record.secondary.to) : null;
+  const secImg = record.secondary ? (pieceImages[record.secondary.color] || {})[record.secondary.type] : null;
+  if(onComplete) onComplete();
+  let f = 0;
+  function paint(){
+    drawBoard();
+    redrawOverlay();
+    octx.save();
+    octx.translate(viewTransform.panX, viewTransform.panY);
+    octx.scale(viewTransform.scale, viewTransform.scale);
+    drawCaptureEffect(octx, captureEffect, victim, f / CAPTURE_FX_FRAMES, seed, dir);
+    octx.restore();
+    octx.globalAlpha = 1;
+    drawMovingImage(landedImg, end.x, end.y, 1, 0, true);
+    if(secImg) drawMovingImage(secImg, secEnd.x, secEnd.y, 1, 0, true);
+    f++;
+    if(f <= CAPTURE_FX_FRAMES){ requestAnimationFrame(paint); return; }
+    toHide.forEach(sq => animHideSquares.delete(sq));
+    octx.clearRect(0,0,LOGICAL_SIZE,LOGICAL_SIZE);
+    drawBoard(); redrawOverlay();
+  }
+  paint();
+}
+
+function animateRecord(record, onComplete){
+  if(!record){ if(onComplete) onComplete(); return; }
+  const toHide = record.secondary ? [record.to, record.secondary.to] : [record.to];
+  toHide.forEach(sq => animHideSquares.add(sq));
+
+  let pending = record.secondary ? 2 : 1;
+  function settle(){
+    pending--;
+    if(pending === 0){
+      // A capture plays its destruction beat here — the same beat the export
+      // spends on the front of its hold. The mover's destination stays in
+      // animHideSquares for its duration so the effect can be drawn UNDER
+      // the arriving piece exactly the way the export layers it.
+      const victim = captureVictim(record);
+      if(victim && captureEffect !== 'off'){
+        runCaptureEffectPreview(record, victim, toHide, onComplete);
+        return;
+      }
+      toHide.forEach(sq => animHideSquares.delete(sq));
+      if(onComplete) onComplete();
+    }
+  }
+
+  const dur = computeMoveDuration(record);
+  // Travel as the piece that ACTUALLY moved (`pieceType`), not as the piece
+  // it becomes. For a promotion that means the pawn makes the journey on
+  // the pawn's own curve and the promoted piece only appears once the move
+  // has landed (drawBoard() in settle() paints the real, promoted board) —
+  // previously the queen/knight was substituted in before the movement was
+  // visually complete, so e.g. a promoted knight was seen sliding straight
+  // up the file like a pawn instead of ever moving like a knight.
+  // For every non-promotion move pieceType === resultPieceType, so nothing
+  // else changes.
+  animateMoveByPiece(record.from, record.to, record.pieceType, record.color, dur, settle);
+  if(record.secondary){
+    animateMoveByPiece(record.secondary.from, record.secondary.to, record.secondary.type, record.secondary.color, dur, settle);
+  }
+}
+
+// Preview entry point used by "Play Animation" (Phase 3): safely animates
+// ANY selected timeline move, not just the live/latest one, by temporarily
+// pointing previewBoard at that move's own before/after snapshots for the
+// duration of the animation — game/historyPointer are never touched. For
+// the live move this is a no-op wrapper (previewBoard stays null
+// throughout, exactly like before Phase 3) since game.board() already IS
+// that move's post-move position.
+function playRecordAnimation(record, onComplete){
+  if(!record){ if(onComplete) onComplete(); return; }
+  const isLive = record.ply === historyPointer;
+  if(!isLive) previewBoard = vacatedSnapshot(record);
+  animateRecord(record, ()=>{
+    if(!isLive) previewBoard = boardAfterPly(record.ply);
+    drawBoard();
+    redrawOverlay();
+    if(onComplete) onComplete();
+  });
+}
+
+/* animation implementations */
+function drawMovingImage(img, x, y, scale=1, angle=0, useOverlay=true){
+  const ctxTarget = useOverlay ? octx : ctx;
+  if(!img || !img.complete) return;
+  const s = LOGICAL_SIZE/8;
+  const w = s*PIECE_SCALE*scale, h = s*PIECE_SCALE*scale;
+  ctxTarget.save(); 
+  // NEW: Apply pan/zoom IF it's the overlay
+  if (useOverlay) {
+      ctxTarget.translate(viewTransform.panX, viewTransform.panY);
+      ctxTarget.scale(viewTransform.scale, viewTransform.scale);
+  }
+  ctxTarget.translate(x,y); 
+  ctxTarget.rotate(angle); 
+  ctxTarget.drawImage(img, -w/2, -h/2, w, h); 
+  ctxTarget.restore();
+}
+
+function quadBezier(p0,p1,p2,t){ const x = Math.pow(1-t,2)*p0.x + 2*(1-t)*t*p1.x + Math.pow(t,2)*p2.x; const y = Math.pow(1-t,2)*p0.y + 2*(1-t)*t*p1.y + Math.pow(t,2)*p2.y; return {x,y}; }
+function cubicBezier(p0,p1,p2,p3,t){ const x = Math.pow(1-t,3)*p0.x + 3*Math.pow(1-t,2)*t*p1.x + 3*(1-t)*Math.pow(t,2)*p2.x + Math.pow(t,3)*p3.x; const y = Math.pow(1-t,3)*p0.y + 3*Math.pow(1-t,2)*t*p1.y + 3*(1-t)*Math.pow(t,2)*p2.y + Math.pow(t,3)*p3.y; return {x,y}; }
+function easeOutCubic(t){ return 1 - Math.pow(1 - t, 3); }
+function easeInOutCubic(t){ return t<0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2,3)/2; }
+
+/* ---------------- SHARED PIECE TRAJECTORY (single source of truth) ----------------
+   ONE definition of "where is this piece, how big is it, and how is it
+   rotated, at normalized time t" — used by the live on-screen animation,
+   by the export's per-frame rendering, AND by the export camera's framing
+   maths. Previously the live anim* functions and the export each carried
+   their own copy of these curves, which had already drifted apart (the
+   export applied rotation/scale/bob against raw `t` while the live path
+   applied them against the eased `e`), and the camera then approximated
+   the path a third time. A camera fed by an approximation of the movement
+   can always frame something the renderer didn't actually draw, so there
+   is now exactly one function and everything consumes its real output.
+
+   The curves themselves are unchanged from the live (eased) versions —
+   this is a de-duplication, not a re-design of the animation.
+*/
+function pieceTrajectory(type, start, end, t){
+  const s = LOGICAL_SIZE/8;
+  // The king's original curve eases differently (and deliberately stops
+  // slightly short via t*0.9) — preserved exactly.
+  const e = (type === 'k') ? easeInOutCubic(t*0.9) : easeOutCubic(t);
+  const bob = 1 - Math.abs(0.5 - e);
+  if(type === 'n'){
+    const mid = { x: (start.x+end.x)/2, y: (start.y+end.y)/2 - Math.max(s*0.5, Math.hypot(end.x-start.x, end.y-start.y)*0.28) };
+    const p = quadBezier(start, mid, end, e);
+    return {x:p.x, y:p.y, angle: Math.PI*(e*1.2), scale: 1 + 0.06*bob, e};
+  }
+  if(type === 'b'){
+    const ctrl = { x: (start.x+end.x)/2 + (end.y-start.y)*0.18, y: (start.y+end.y)/2 + (start.x-end.x)*0.18 };
+    const p = quadBezier(start, ctrl, end, e);
+    return {x:p.x, y:p.y, angle: (e-0.5)*0.18, scale: 1, e};
+  }
+  if(type === 'r'){
+    const bounce = (t > 0.85) ? (1 + (1 - (t-0.85)/0.15)*0.08) : 1;
+    return {x: start.x + (end.x-start.x)*e, y: start.y + (end.y-start.y)*e, angle: 0, scale: bounce, e};
+  }
+  if(type === 'q'){
+    const ctrl1 = { x: start.x + (end.x-start.x)*0.33 - (end.y-start.y)*0.12, y: start.y + (end.y-start.y)*0.33 + (end.x-start.x)*0.06 };
+    const ctrl2 = { x: start.x + (end.x-start.x)*0.66 + (end.y-start.y)*0.12, y: start.y + (end.y-start.y)*0.66 - (end.x-start.x)*0.06 };
+    const p = cubicBezier(start, ctrl1, ctrl2, end, e);
+    return {x:p.x, y:p.y, angle: (e-0.5)*Math.PI*0.35, scale: 1 + 0.07*bob, e};
+  }
+  if(type === 'k'){
+    return {x: start.x + (end.x-start.x)*e, y: start.y + (end.y-start.y)*e - 4*bob, angle: (e-0.5)*0.08, scale: 1 + 0.03*bob, e};
+  }
+  return {x: start.x + (end.x-start.x)*e, y: start.y + (end.y-start.y)*e - 6*bob, angle: 0, scale: 1 + 0.04*bob, e};
+}
+
+// Per-type decorative flourish drawn behind/under the moving piece on the
+// LIVE overlay only (glows, the knight's ground shadow, the queen's flash).
+// Purely cosmetic and unchanged from the original per-piece functions —
+// kept out of pieceTrajectory() so position/scale/angle stay the single
+// shared truth that the export and the camera can rely on.
+function drawLiveDecoration(type, start, end, st, t){
+  const s = LOGICAL_SIZE/8, e = st.e;
+  function withView(fn){
+    octx.save();
+    octx.translate(viewTransform.panX, viewTransform.panY);
+    octx.scale(viewTransform.scale, viewTransform.scale);
+    fn();
+    octx.restore();
+  }
+  if(type === 'n'){
+    withView(()=>{ octx.beginPath(); octx.fillStyle = `rgba(0,0,0,${0.14*(1-e)})`; octx.ellipse(st.x, st.y + 24*(1-e), s*0.25, s*0.12*(1-e), 0, 0, Math.PI*2); octx.fill(); });
+  } else if(type === 'b'){
+    withView(()=>{ octx.beginPath(); octx.fillStyle = `rgba(180,220,255,${0.14*(1-e)})`; octx.arc(st.x, st.y, s*0.22, 0, Math.PI*2); octx.fill(); });
+  } else if(type === 'r'){
+    if(t > 0.7){ const p = (t-0.7)/0.3; withView(()=>{ octx.beginPath(); octx.fillStyle = `rgba(255,235,150,${0.25*(1-p)})`; octx.arc(end.x, end.y, s*(0.1 + p*0.7), 0, Math.PI*2); octx.fill(); }); }
+  } else if(type === 'q'){
+    if(e > 0.45 && e < 0.65){ withView(()=>{ octx.beginPath(); octx.fillStyle = `rgba(255,230,120,${(0.65-e)*2})`; octx.arc(st.x, st.y, s*0.38*(0.65-e)*4, 0, Math.PI*2); octx.fill(); }); }
+  } else if(type === 'k'){
+    if(t > 0.8){ const g = (t-0.8)/0.2; withView(()=>{ octx.beginPath(); octx.fillStyle = `rgba(255,245,200,${0.18*(1-g)})`; octx.arc(end.x, end.y, s*0.45*g, 0, Math.PI*2); octx.fill(); }); }
+  } else {
+    withView(()=>{ octx.beginPath(); octx.fillStyle = `rgba(250,238,88,${0.45*e})`; octx.arc(end.x, end.y, s*(0.2 + 0.4*e), 0, Math.PI*2); octx.fill(); });
+  }
+}
+
+// The live animation loop — one implementation for every piece type, since
+// the only per-type differences are the trajectory (pieceTrajectory) and
+// the cosmetic flourish (drawLiveDecoration). t0 is anchored to the first
+// real rAF timestamp for the same reason the export does it: a callback
+// delayed past `duration` would otherwise skip the whole animation.
+function animPiece(type,start,end,img,duration,onComplete){
+  let t0 = null;
+  function frame(now){
+    if(t0 === null) t0 = now;
+    const t = Math.min(1, (now - t0)/duration);
+    drawBoard(); redrawOverlay(t >= 1);
+    octx.globalAlpha = 1;
+    const st = pieceTrajectory(type, start, end, t);
+    drawLiveDecoration(type, start, end, st, t);
+    drawMovingImage(img, st.x, st.y, st.scale, st.angle, true);
+    if(t < 1) requestAnimationFrame(frame);
+    else { octx.clearRect(0,0,LOGICAL_SIZE,LOGICAL_SIZE); if(onComplete) onComplete(); }
+  }
+  requestAnimationFrame(frame);
+}
+
+/* ---------------- CONTROLS (Original + Status Updates) ---------------- */
+// Undo/redo walk `moveHistory` via `historyPointer`, calling chess.js's own
+// move()/undo() to keep the authoritative position in sync — no duplicate
+// chess engine, no separate move-legality logic. syncTransientMoveState()
+// keeps lastMoveRecord (and any in-flight animation hide-state) pointing at
+// exactly the move that produced the CURRENT position, so a move that has
+// been undone can never be replayed or exported as if it still applied.
+// One ply backward / forward through the CURRENT history. Undo/Redo and the
+// Prev/Next navigation buttons are the same operation on the same
+// moveHistory/historyPointer — PGN navigation deliberately does not get a
+// second, parallel history system. Both are safe no-ops at the ends.
+function stepBackward(){
+  if(historyPointer <= 0) return false; // already at the start position
+  try{
+    game.undo();
+    historyPointer--;
+    syncTransientMoveState();
+    updateStatus(); drawBoard(); redrawOverlay(); updateHistory();
+    return true;
+  }catch(e){ return false; }
+}
+function stepForward(){
+  if(historyPointer >= moveHistory.length) return false; // nothing ahead
+  const rec = moveHistory[historyPointer];
+  const moveObj = { from: rec.from, to: rec.to };
+  if(rec.promotion) moveObj.promotion = rec.promotion;
+  let m = null;
+  try { m = game.move(moveObj); } catch(e){ m = null; }
+  if(!m) return false;
+  historyPointer++;
+  syncTransientMoveState();
+  updateStatus(); drawBoard(); redrawOverlay(); updateHistory();
+  return true;
+}
+document.getElementById('undo').addEventListener('click', stepBackward);
+document.getElementById('redo').addEventListener('click', stepForward);
+document.getElementById('prevMove').addEventListener('click', stepBackward);
+document.getElementById('nextMove').addEventListener('click', stepForward);
+document.getElementById('reset').addEventListener('click', ()=>{ game.reset(); selectedSquare=null; moveHistory=[]; historyPointer=0; importedLimit=0; syncTransientMoveState(); updateStatus(); unzoomSmooth(); drawBoard(); redrawOverlay(); updateHistory(); });
+
+/* ---------------- PGN IMPORT (Phase 6) ----------------
+   Brings a real game in from Chess.com / Lichess / anywhere so the user
+   doesn't have to rebuild positions by hand. Deliberately NOT an analysis
+   feature: the PGN is only a source of moves. Nothing is evaluated,
+   classified or looked up, and no engine is involved.
+
+   chess.js stays the only chess authority — it parses the PGN and it
+   validates every move. The moves it reports are then replayed through
+   attemptMove(), the exact same entry point a dragged move uses, so every
+   imported ply gets a normal move record (snapshots, castling/en-passant
+   metadata, check square, empty annotation/arrows/highlights) and behaves
+   identically to a hand-played move everywhere downstream — timeline,
+   selection, preview, export.
+*/
+
+// Strips the parts of PGN that carry no moves: brace comments, rest-of-line
+// comments, NAGs, and parenthesised variations (nesting-aware, so a
+// variation inside a variation is removed with it). Variations are dropped
+// rather than parsed — the mainline is what gets imported.
+function sanitizePgnText(raw){
+  let s = String(raw || '').replace(/\r/g, '');
+  s = s.replace(/\{[^}]*\}/g, ' ');   // { comment }
+  s = s.replace(/;[^\n]*/g, ' ');     // ; comment to end of line
+  let out = '', depth = 0;
+  for(const ch of s){
+    if(ch === '('){ depth++; continue; }
+    if(ch === ')'){ if(depth > 0) depth--; continue; }
+    if(depth === 0) out += ch;
+  }
+  out = out.replace(/\$\d+/g, ' ');   // NAGs ($1, $4, ...)
+  return out;
+}
+
+function importPgn(text){
+  const statusEl = document.getElementById('pgnStatus');
+  function fail(msg){
+    if(statusEl) statusEl.textContent = msg;
+    showMessage(msg, 'error');
+    return false;
+  }
+  if(typeof Chess !== 'function') return fail('Chess engine not loaded yet.');
+  const raw = String(text || '').trim();
+  if(!raw) return fail('Paste a PGN first.');
+
+  // Parse in a throwaway game so a bad PGN can never damage the live one.
+  const probe = new Chess();
+  let ok = false;
+  try { ok = !!probe.load_pgn(sanitizePgnText(raw), {sloppy: true}); } catch(e){ ok = false; }
+  if(!ok){ try { ok = !!probe.load_pgn(raw, {sloppy: true}); } catch(e){ ok = false; } }
+  if(!ok) return fail('Could not read that PGN.');
+
+  const moves = probe.history({verbose: true});
+  if(!moves.length) return fail('That PGN contains no moves.');
+
+  // A PGN may start from a set-up position rather than the initial one.
+  const fenHeader = raw.match(/\[\s*FEN\s+"([^"]+)"\s*\]/i);
+
+  let startedOk = true;
+  if(fenHeader){ try { startedOk = !!game.load(fenHeader[1]); } catch(e){ startedOk = false; } }
+  if(!fenHeader || !startedOk) game.reset();
+
+  selectedSquare = null;
+  moveHistory = [];
+  historyPointer = 0;
+  // Reset before replay: attemptMove() clamps importedLimit down to
+  // moveHistory.length on every push (see attemptMove), so a stale limit
+  // left over from a PREVIOUS import would otherwise cap this new one at 1.
+  importedLimit = 0;
+
+  let applied = 0;
+  for(const mv of moves){
+    if(!attemptMove(mv.from, mv.to, mv.promotion || null)) break;
+    applied++;
+  }
+
+  if(!applied) return fail('Could not replay that PGN.');
+
+  // attemptMove() (via the loop above) leaves `game` and `historyPointer`
+  // at the LAST imported ply — necessary so buildMoveRecord() could snapshot
+  // each position as it was built. But a fresh import should hand the user
+  // the START of the game, not its end: rewind `game` back to the starting
+  // position with the same game.undo() stepBackward() already uses, WITHOUT
+  // touching moveHistory itself, so Next immediately plays Move 1 and every
+  // ply is still there to step through (or click in the timeline).
+  for(let i=0;i<applied;i++) game.undo();
+  historyPointer = 0;
+  // The whole imported line is immediately selectable/visible in the
+  // timeline (see importedLimit above) even though historyPointer starts at
+  // 0 - it's the definitive history, not an undone one.
+  importedLimit = applied;
+
+  syncTransientMoveState();
+  updateStatus(); drawBoard(); redrawOverlay(); updateHistory();
+
+  const msg = applied === moves.length
+    ? `Imported ${applied} moves.`
+    : `Imported ${applied} of ${moves.length} moves.`;
+  if(statusEl) statusEl.textContent = msg + ' Press Next to start from Move 1.';
+  showMessage(msg, 'success');
+  return true;
+}
+document.getElementById('importPgn').addEventListener('click', ()=>{
+  importPgn(document.getElementById('pgnInput').value);
+});
+document.getElementById('flip').addEventListener('click', ()=>{ boardFlipped = !boardFlipped; drawBoard(); redrawOverlay(); });
+document.getElementById('captureFx').addEventListener('change', (e)=>{ captureEffect = e.target.value; });
+// Play/Export operate on the ACTIVE record — the selected timeline move if
+// one is selected, else the latest move (getActiveRecord()'s default) —
+// so previewing/exporting an older move works exactly like the latest one.
+document.getElementById('playAnim').addEventListener('click', ()=>{ const rec = getActiveRecord(); if(rec) playRecordAnimation(rec, ()=>{ updateHistory(); updateStatus(); }); });
+document.getElementById('exportAnim').addEventListener('click', ()=>{ const rec = getActiveRecord(); if(!rec){ showMessage('Make a move first (drag a piece). Export records the selected move.', 'error'); return; } exportLastMoveAsWebM(rec, {fps: EXPORT_FPS}); });
+const removeBtn = document.getElementById('removeToggle'); removeBtn.addEventListener('click', ()=>{ removeMode = !removeMode; removeBtn.classList.toggle('active', removeMode); removeBtn.textContent = removeMode ? 'Remove: ON' : 'Remove Piece'; });
+document.getElementById('clearAll').addEventListener('click', ()=>{ const rec=getActiveRecord(); if(rec){ rec.arrows=[]; rec.highlights=[]; } redrawOverlay(); updateHistory(); });
+document.getElementById('clearStoryTargets').addEventListener('click', ()=>{ const rec=getActiveRecord(); if(rec) rec.storyTargets=[]; redrawOverlay(); updateHistory(); });
+
+// NEW (Phase 3): return the board/annotation context to the live position.
+document.getElementById('backToLive').addEventListener('click', ()=>{ if(historyPointer > 0) selectMove(historyPointer); });
+
+// NEW (Phase 3): annotation/badge are USER choices only — the app never
+// computes, verifies, or suggests them. Written straight onto the active
+// move record (never a global), so they never leak to another move.
+document.getElementById('annotationSelect').addEventListener('change', (e)=>{
+  const rec = getActiveRecord();
+  if(!rec) return;
+  rec.annotation = e.target.value;
+  rec.badge = badgeForClassification(e.target.value); // symbol derived, never chosen separately
+  updateTimeline();
+  redrawOverlay();
+});
+
+/* ---------------- TIMELINE + ANNOTATION UI (Phase 3) ---------------- */
+// Renders only the current active line (plies 1..historyPointer) as
+// White/Black move pairs, PGN-table style. A move undone past historyPointer
+// simply stops appearing here (and reappears on redo) — the list always
+// mirrors the real current history, never a stale/duplicate copy of it.
+function updateTimeline(){
+  const el = document.getElementById('timelineList');
+  if(!el) return;
+  el.innerHTML = '';
+  function moveLabel(rec){
+    let label = rec.san || (rec.from + '-' + rec.to);
+    if(rec.badge) label += ' ' + rec.badge;
+    return label;
+  }
+  function makeMoveBtn(rec){
+    const b = document.createElement('button');
+    b.style.padding = '3px 8px';
+    b.style.fontSize = '13px';
+    b.textContent = moveLabel(rec);
+    if(rec.ply === selectedPly) b.classList.add('active');
+    b.title = rec.annotation ? `${moveLabel(rec)} — ${rec.annotation}` : moveLabel(rec);
+    b.onclick = () => selectMove(rec.ply);
+    return b;
+  }
+  // Shows the current active line (1..historyPointer) exactly as before for
+  // a normally-played game, PLUS an imported PGN's full line up front (see
+  // importedLimit above) — an imported line is the definitive history, not
+  // an undone one, so it doesn't need to wait for Next to walk `game` up to
+  // each ply before it can appear here.
+  const visibleLimit = Math.max(historyPointer, importedLimit);
+  for(let i=0; i<visibleLimit; i+=2){
+    const whiteRec = moveHistory[i];
+    // Bounds-check against visibleLimit, not just array length: after an
+    // undo (with no imported future), moveHistory[i+1] can still exist
+    // (it's kept around for redo) but no longer be part of the ACTIVE line
+    // — it must not reappear here until the user actually redoes it.
+    const blackRec = (i+1 < visibleLimit) ? moveHistory[i+1] : undefined;
+    const row = document.createElement('div');
+    row.style.cssText = 'padding:4px 6px;display:flex;gap:6px;align-items:center;border-bottom:1px solid rgba(255,255,255,0.03)';
+    const numSpan = document.createElement('span');
+    numSpan.className = 'small';
+    numSpan.style.minWidth = '20px';
+    numSpan.textContent = (Math.floor(i/2)+1) + '.';
+    row.appendChild(numSpan);
+    row.appendChild(makeMoveBtn(whiteRec));
+    if(blackRec) row.appendChild(makeMoveBtn(blackRec));
+    el.appendChild(row);
+  }
+}
+
+/* ---------------- MOVE CLASSIFICATION (Phase 6) ----------------
+   Annotation and Badge used to be two separate manual controls that the
+   user had to keep in sync by hand ("Brilliant" *and* "!!"). They are one
+   piece of data: the human's classification of the move, plus the
+   conventional symbol that classification is written with. The user picks
+   the classification once and the symbol follows automatically.
+
+   The existing option names are kept as-is; "Interesting" is the only
+   added label, because the existing list had no term for "!?". Good and
+   Book are deliberately symbol-less — there is no conventional symbol for
+   either, and inventing one would put a mark on the board the notation
+   doesn't have.
+
+   Nothing here is computed or suggested by the app: the user remains the
+   only one who decides whether a move was brilliant or a blunder.
+*/
+const CLASSIFICATIONS = [
+  { value: '',            badge: '',   label: '(none)' },
+  { value: 'Brilliant',   badge: '!!', label: 'Brilliant  !!' },
+  { value: 'Best',        badge: '!',  label: 'Best  !' },
+  { value: 'Good',        badge: '',   label: 'Good' },
+  { value: 'Book',        badge: '',   label: 'Book' },
+  { value: 'Interesting', badge: '!?', label: 'Interesting  !?' },
+  { value: 'Inaccuracy',  badge: '?!', label: 'Inaccuracy  ?!' },
+  { value: 'Mistake',     badge: '?',  label: 'Mistake  ?' },
+  { value: 'Blunder',     badge: '??', label: 'Blunder  ??' },
+  { value: 'Check',       badge: '+',  label: 'Check  +' },
+  { value: 'Checkmate',   badge: '#',  label: 'Checkmate  #' }
+];
+function badgeForClassification(value){
+  const hit = CLASSIFICATIONS.find(c => c.value === value);
+  return hit ? hit.badge : '';
+}
+function buildClassificationOptions(){
+  const sel = document.getElementById('annotationSelect');
+  if(!sel || sel.options.length) return;
+  for(const c of CLASSIFICATIONS){
+    const o = document.createElement('option');
+    o.value = c.value; o.textContent = c.label;
+    sel.appendChild(o);
+  }
+}
+
+// Populates the "selected move" label and the classification select from
+// the active record. Disabled (and cleared) when there's no move yet.
+function updateAnnotationPanel(){
+  const labelEl = document.getElementById('selectedMoveLabel');
+  const annSel = document.getElementById('annotationSelect');
+  const storyEl = document.getElementById('storyTargetList');
+  if(!labelEl || !annSel) return;
+  buildClassificationOptions();
+  const rec = getActiveRecord();
+  if(storyEl) storyEl.textContent = (rec && rec.storyTargets.length) ? rec.storyTargets.join(' ') : 'none';
+  if(!rec){
+    labelEl.textContent = 'No move selected';
+    annSel.value = ''; annSel.disabled = true;
+    return;
+  }
+  const moveNum = Math.ceil(rec.ply / 2);
+  const side = rec.color === 'w' ? '.' : '...';
+  const live = rec.ply === historyPointer ? ' (live)' : '';
+  labelEl.textContent = `Move ${moveNum}${side} ${rec.san || rec.to}${live}`;
+  annSel.disabled = false;
+  annSel.value = rec.annotation || '';
+}
+
+/* history UI (Original, now move-scoped — Phase 3) */
+function updateHistory(){
+  updateTimeline();
+  updateAnnotationPanel();
+  const rec = getActiveRecord();
+  const activeArrows = rec ? rec.arrows : [];
+  const activeHighlights = rec ? rec.highlights : [];
+  const el=document.getElementById('historyList'); el.innerHTML='';
+  activeArrows.forEach((a,i)=>{ const d=document.createElement('div'); d.style.padding='6px'; d.style.borderBottom='1px solid rgba(255,255,255,0.03)'; d.innerHTML=`Arrow ${i+1}: ${a.from} → ${a.to} <button data-i='${i}' style="padding: 2px 5px; font-size: 10px; float: right;">X</button>`; el.appendChild(d); });
+  activeHighlights.forEach((h,i)=>{ const d=document.createElement('div'); d.style.padding='6px'; d.style.borderBottom='1px solid rgba(255,255,255,0.03)'; d.innerHTML=`Highlight ${i+1}: ${h.sq} <button data-i='h${i}' style="padding: 2px 5px; font-size: 10px; float: right;">X</button>`; el.appendChild(d); });
+  el.querySelectorAll('button').forEach(b=>{ b.onclick=()=>{ const id=b.dataset.i; const rec2=getActiveRecord(); if(!rec2) return; if(id.startsWith('h')){ rec2.highlights.splice(parseInt(id.slice(1)),1); } else { rec2.arrows.splice(parseInt(id),1); } redrawOverlay(); updateHistory(); }; });
+}
+
+/* hotkeys (Original) */
+document.addEventListener('keydown', (e)=>{ if(document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') return; if(e.key==='m'||e.key==='M'){ document.getElementById('mode').value='move'; document.getElementById('mode').dispatchEvent(new Event('change')); } if(e.key==='a'||e.key==='A'){ document.getElementById('mode').value='arrow'; document.getElementById('mode').dispatchEvent(new Event('change')); } if(e.key==='h'||e.key==='H'){ document.getElementById('mode').value='highlight'; document.getElementById('mode').dispatchEvent(new Event('change')); } if(e.key==='c'||e.key==='C'){ const rec=getActiveRecord(); if(rec){ rec.arrows=[]; rec.highlights=[]; } redrawOverlay(); updateHistory(); } if(e.key==='f'||e.key==='F'){ document.getElementById('flip').click(); } if(e.code === 'Space'){ e.preventDefault(); document.getElementById('playAnim').click(); } });
+
+/* ---------------- ZOOM helpers (MODIFIED for Pan/Zoom) ---------------- */
+function zoomToSquareSmooth(sq){
+  const displayPx = boardHolder.clientWidth;
+  const c = squareCenter(sq); // Logical (0..LOGICAL_SIZE) coords — already flip-aware
+
+  // COORDINATE-SPACE FIX: viewTransform.panX/panY are CSS/display-pixel
+  // offsets (they're applied directly as `canvasWrap.style.transform:
+  // translate(...)px`, exactly like pinch-zoom's onMove handler computes
+  // them), but squareCenter() returns coordinates in the canvas's internal
+  // LOGICAL_SIZE (600x600) bitmap space. Those two spaces only coincide
+  // when the board happens to render at exactly 600 CSS px. Convert the
+  // logical square-center into display-pixel space (at scale=1) first, the
+  // same way the canvas's own CSS width/height already scales its bitmap,
+  // so this works at any board size — matching pinch-zoom's convention.
+  const dispScale = displayPx / LOGICAL_SIZE;
+  const cDisplayX = c.x * dispScale;
+  const cDisplayY = c.y * dispScale;
+
+  let scale = 2.5; // Target scale (unchanged)
+
+  // SECOND COORDINATE FIX: .canvas-wrap has `transform-origin:center center`
+  // (see <style>), so `transform: translate(panX,panY) scale(s)` scales
+  // around the element's own center O=(displayPx/2, displayPx/2), not its
+  // top-left corner — a local point P lands on screen at
+  // `O + scale*(P-O) + (panX,panY)`. Solving that for the pan which puts
+  // the target square's center exactly at O (dead-center of the viewport):
+  const originX = displayPx / 2, originY = displayPx / 2;
+  const targetPanX = scale * (originX - cDisplayX);
+  const targetPanY = scale * (originY - cDisplayY);
+
+  const start = {tx: viewTransform.panX || 0, ty: viewTransform.panY || 0, scale: viewTransform.scale || 1};
+  const end = {tx: targetPanX, ty: targetPanY, scale: scale};
+
+  animateTransform(start, end, 420);
+  zoomHint.style.display = 'block';
+}
+function unzoomSmooth(){ 
+  const start = {tx: viewTransform.panX || 0, ty: viewTransform.panY || 0, scale: viewTransform.scale || 1}; 
+  const end = {tx: 0, ty:0, scale: 1}; 
+  animateTransform(start, end, 420); 
+  zoomHint.style.display = 'none'; 
+}
+function animateTransform(from,to,dur){
+  const t0 = performance.now();
+  function frame(now){
+    const t = Math.min(1,(now - t0)/dur);
+    const e = easeInOutCubic(t);
+    const tx = from.tx + (to.tx - from.tx)*e;
+    const ty = from.ty + (to.ty - from.ty)*e;
+    const s = from.scale + (to.scale - from.scale)*e;
+    
+    // Apply transform
+    viewTransform.panX = tx; 
+    viewTransform.panY = ty; 
+    viewTransform.scale = s;
+    canvasWrap.style.transform = `translate(${tx}px, ${ty}px) scale(${s})`;
+    
+    // Redraw *during* zoom
+    drawBoard();
+    redrawOverlay();
+
+    if(t < 1) requestAnimationFrame(frame);
+    else {
+      // Snap to final state. NOTE: `to` is shaped {tx,ty,scale} (this
+      // function's own local naming) while `viewTransform` is shaped
+      // {panX,panY,scale} (used everywhere else, e.g. drawBoard()'s
+      // ctx.translate(viewTransform.panX, viewTransform.panY)) — assigning
+      // `viewTransform = {...to}` here silently corrupted panX/panY to
+      // undefined on every completed zoom/unzoom, breaking any redraw that
+      // happened afterward without going through another animateTransform
+      // call. Set the matching fields explicitly instead.
+      viewTransform.panX = to.tx;
+      viewTransform.panY = to.ty;
+      viewTransform.scale = to.scale;
+      canvasWrap.style.transform = `translate(${to.tx}px, ${to.ty}px) scale(${to.scale})`;
+      drawBoard();
+      redrawOverlay();
+    }
+  }
+  requestAnimationFrame(frame);
+}
+
+/* ---------------- EXPORT: CRITICAL FIX ----------------
+   This function is now modified to *only* render the moving piece
+   on a transparent background.
+   THE TYPO 'LOGICAL_GSIZE' IS FIXED.
+*/
+function exportLastMoveAsWebM(moveRec, opts={fps:EXPORT_FPS}){
+  try {
+    const fps = opts.fps || EXPORT_FPS;
+
+    // temp canvas for drawing frames — rendered at EXPORT_RENDER_SCALE times
+    // LOGICAL_SIZE (physical pixels), independent of the live on-screen
+    // board's resolution, so cropping into a tight cinematic frame doesn't
+    // upscale an already-low-resolution source (the previous 600x600
+    // working canvas, cropped down to e.g. 120x120 for a tight shot and
+    // then stretched up to fill a 720x720 export, was exactly that — a
+    // ~6x upscale of already-rasterized pixels). All existing drawing code
+    // below still works in the same 0..LOGICAL_SIZE coordinate space
+    // unchanged; the scale transform on tctx (right below) is what makes it
+    // render at higher physical resolution.
+    const temp = document.createElement('canvas');
+    temp.width = LOGICAL_SIZE * EXPORT_RENDER_SCALE;
+    temp.height = LOGICAL_SIZE * EXPORT_RENDER_SCALE;
+    const tctx = temp.getContext('2d', {alpha:true});
+    tctx.scale(EXPORT_RENDER_SCALE, EXPORT_RENDER_SCALE);
+
+    // export canvas square (with alpha)
+    const exportCanvas = document.createElement('canvas'); exportCanvas.width = EXPORT_SIZE; exportCanvas.height = EXPORT_SIZE;
+    const ectx = exportCanvas.getContext('2d', {alpha:true});
+
+    // prepare snapshot and moving info — moveRec is now the rich per-ply
+    // record built by buildMoveRecord() (see MOVE APPLY section), so the
+    // moving piece's *post-move* type/color is known directly (fixes
+    // promotion export showing a pawn instead of the promoted piece — this
+    // is exactly what live preview already reads via game.get(to)).
+    // The piece that TRAVELS vs the piece that ENDS UP on the square. These
+    // differ only for a promotion, where the pawn must make the journey on
+    // the pawn's own curve and the promoted piece appears on arrival —
+    // substituting it in up front made a promoted knight travel in a
+    // straight pawn-like line and never move like a knight.
+    const travelType = moveRec.pieceType || moveRec.resultPieceType || 'p';
+    const landType = moveRec.resultPieceType || travelType;
+    const movingColor = moveRec.color || 'w';
+    const from = moveRec.from, to = moveRec.to;
+    const secondary = moveRec.secondary || null; // castling's rook: {from,to,type:'r',color}
+    const extraVacate = moveRec.extraVacate || []; // e.g. en passant's captured-pawn square
+    // Move-scoped (Phase 3): only THIS move's own arrows/highlights are
+    // exported — never a global list that would leak another move's
+    // annotations in. Same fields playRecordAnimation()'s live preview uses.
+    const recArrows = moveRec.arrows || [];
+    const recHighlights = moveRec.highlights || [];
+
+    // Two static-board snapshots, not one — the captured piece in an en
+    // passant capture must stay visible while the capturing pawn is still
+    // travelling and disappear only once it lands (see bug report: "the
+    // captured pawn is NOT visible during the export"). vacatedSnapshot()
+    // (shared with the historical live-preview path) clears the primary
+    // piece's origin, castling's rook origin, AND extraVacate (en passant's
+    // captured-pawn square, which is not the destination square) AND the
+    // destination square itself — correct for the LANDED board, but
+    // clearing those from frame one would erase, for the entire clip,
+    // pieces the capture has not visually taken yet. During the movement
+    // phase only the ORIGIN squares (this piece's `from`, and castling's
+    // rook `from`) are cleared, so BOTH an ordinary capture's victim on
+    // `to` and en passant's pawn on its own square keep standing right up
+    // to the moment of landing, and vanish exactly when the capture
+    // visually happens.
+    function snapshotClearing(squares){
+      const snap = JSON.parse(JSON.stringify(moveRec.preSnapshot || game.board()));
+      for(const sqName of squares){
+        const f = 'abcdefgh'.indexOf(sqName[0]);
+        const r = 8 - parseInt(sqName[1]);
+        if(snap[r] && snap[r][f]) snap[r][f] = null;
+      }
+      return snap;
+    }
+    const preSnapshotDuringMove = snapshotClearing([from].concat(secondary ? [secondary.from] : []));
+    const preSnapshotLanded = vacatedSnapshot(moveRec);
+
+    // compute centers
+    const startCenter = squareCenter(from);
+    const endCenter = squareCenter(to);
+    const secondaryStartCenter = secondary ? squareCenter(secondary.from) : null;
+    const secondaryEndCenter = secondary ? squareCenter(secondary.to) : null;
+
+    // ---------------- EXPORT PHASE TIMING (the export contract) ----------
+    // The exported clip is an explicit four-phase state machine:
+    //
+    //   PHASE A  MOVEMENT      elapsed < duration, t = elapsed/duration,
+    //                          the piece travels its real pieceTrajectory()
+    //   PHASE B  LANDING       the first frame where t>=1 — pieceTrajectory
+    //                          is no longer consulted, the piece is pinned to
+    //                          its exact destination, a promotion becomes the
+    //                          promoted piece, en passant's captured pawn is
+    //                          removed. The final chess position is now what
+    //                          is on screen.
+    //   PHASE C  FINAL HOLD    exactly FINAL_HOLD_MS of that settled state,
+    //                          during which the check context (if any) eases
+    //                          in and then sits still long enough to read
+    //   PHASE D  STOP          frame production and the recorder stop, and
+    //                          only here — never on movement time alone
+    //
+    // Movement is deliberately unhurried: a truncated-looking move is a far
+    // worse outcome than a slightly long clip, so the export runs on its own
+    // larger base (2000ms floor) rather than the live animation's 1500ms,
+    // still scaled by distance through the same shared computeMoveDuration()
+    // so a long move gets proportionally more time. Live animation timing is
+    // untouched — it keeps calling computeMoveDuration(record) with the
+    // default base.
+    const EXPORT_MOVEMENT_BASE_MS = 2000;
+    const duration = opts.duration || computeMoveDuration(moveRec, EXPORT_MOVEMENT_BASE_MS);
+
+    // -------------------------------------------------
+    // --- START FINAL FIX (Padding + Context) ---
+    // -------------------------------------------------
+
+    /* ---------------- CAMERA / FRAMING ----------------
+       Two things were wrong here and they compounded each other.
+
+       1. The crop was squared with max(boxW, boxH) and clamped only by the
+          board itself. A vertical move like Qa1-a8 spans ~7 ranks, so boxH
+          reached the full board height and the square crop therefore became
+          the ENTIRE board — the reported "A1->A8 shows the whole board".
+
+       2. The camera centre was pinned exactly to the moving piece
+          (camX = state.x). A piece drawn dead-centre of the crop in every
+          single frame does not appear to move at all: the board slides
+          underneath it instead. That is why the knight's arc "did not
+          behave as intended" — the arc was being rendered correctly and
+          then cancelled out by the camera following it perfectly.
+
+       The fix is to frame the movement rather than chase the piece:
+
+       - The box is sized from the REAL trajectory (pieceTrajectory — the
+         same function that draws each frame, so the camera can never frame
+         something the renderer didn't draw), capped at MAX_TRAJECTORY_BOX
+         so a long move can't escalate to the whole board.
+       - If the whole trajectory fits in that box, the camera is STATIC and
+         the piece visibly travels across a stationary frame. This is the
+         common case and gives the clearest possible origin->path->landing.
+       - Only when the trajectory genuinely exceeds the cap does the camera
+         move, and then it tracks with a DEAD ZONE: it stays put until the
+         piece approaches the edge of frame, so the piece is always moving
+         relative to the frame rather than glued to its centre.
+       - Arrows/highlights get their own, larger allowance (up to the full
+         board): a static annotation can't be revealed by panning, so it
+         must fit. This preserves the existing annotation-aware crop.
+
+       DIRECTORIAL RULE (camera/piece decoupling): everything above — the
+       trajectory-sized box, the tracking dead zone, all of it — only
+       applies once the move has an explicit creator marker: a Story
+       Target, or an arrow/highlight annotation. Piece movement by itself
+       is never enough; an unmarked move keeps the stable full board no
+       matter how far the piece travels. See hasAnnotations/boxSize below.
+    */
+    const SQ = LOGICAL_SIZE/8;
+    const margin = SQ * 0.5;              // "half square" padding (unchanged)
+    const MIN_BOX = SQ * 2.8;             // never tighter than ~3 squares of context
+    const MAX_TRAJECTORY_BOX = SQ * 5.2;  // beyond this the camera pans instead of zooming out
+
+    const TRAJECTORY_SAMPLES = 24;
+    const trajXs = [], trajYs = [];
+    function addTrajectorySamples(type, start, end){
+      for(let i=0;i<=TRAJECTORY_SAMPLES;i++){
+        const st = pieceTrajectory(type, start, end, i/TRAJECTORY_SAMPLES);
+        // The piece is drawn centred on (x,y) at PIECE_SCALE, so the box has
+        // to contain its drawn extent, not just its centre point.
+        const halfPiece = SQ * PIECE_SCALE * st.scale / 2;
+        trajXs.push(st.x - halfPiece, st.x + halfPiece);
+        trajYs.push(st.y - halfPiece, st.y + halfPiece);
+      }
+    }
+    addTrajectorySamples(travelType, startCenter, endCenter);
+    if(secondary){ addTrajectorySamples(secondary.type, secondaryStartCenter, secondaryEndCenter); }
+
+    const trajMinX = Math.min(...trajXs) - margin, trajMaxX = Math.max(...trajXs) + margin;
+    const trajMinY = Math.min(...trajYs) - margin, trajMaxY = Math.max(...trajYs) + margin;
+    const trajW = trajMaxX - trajMinX, trajH = trajMaxY - trajMinY;
+
+    // Annotations (arrows/highlights) must fit statically — they are never
+    // revealed by camera movement. Story Targets join them here: the
+    // creator marking a square is the same kind of "this is what matters"
+    // signal an arrow or highlight already is, so it widens the frame the
+    // same way — and because annXs/annYs are seeded with the trajectory
+    // bounds, the resulting box always contains the whole move too.
+    const annXs = [trajMinX, trajMaxX], annYs = [trajMinY, trajMaxY];
+    for(const h of recHighlights){
+      const hc = squareCenter(h.sq);
+      annXs.push(hc.x - SQ/2 - margin, hc.x + SQ/2 + margin);
+      annYs.push(hc.y - SQ/2 - margin, hc.y + SQ/2 + margin);
+    }
+    for(const a of recArrows){
+      const ac1 = squareCenter(a.from);
+      annXs.push(ac1.x - margin, ac1.x + margin); annYs.push(ac1.y - margin, ac1.y + margin);
+      const ac2 = a.to ? squareCenter(a.to) : {x:a.toX, y:a.toY};
+      if(ac2){ annXs.push(ac2.x - margin, ac2.x + margin); annYs.push(ac2.y - margin, ac2.y + margin); }
+    }
+    const hasStoryTargets = moveRec.storyTargets.length > 0;
+    for(const sq of moveRec.storyTargets){
+      const sc = squareCenter(sq);
+      annXs.push(sc.x - SQ/2 - margin, sc.x + SQ/2 + margin);
+      annYs.push(sc.y - SQ/2 - margin, sc.y + SQ/2 + margin);
+    }
+    const annW = Math.max(...annXs) - Math.min(...annXs);
+    const annH = Math.max(...annYs) - Math.min(...annYs);
+
+    const cap = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    const trajBox = cap(Math.max(trajW, trajH), MIN_BOX, Math.min(MAX_TRAJECTORY_BOX, LOGICAL_SIZE));
+    // Only annotations may push the box past the trajectory cap. annXs/annYs
+    // are seeded with the trajectory bounds so that an annotation box also
+    // contains the move — but when there are no annotations at all that
+    // seeding would hand the UNCAPPED trajectory extent straight back and
+    // silently undo the cap, which is what still made Qa1-a8 open out to
+    // the whole board.
+    const hasAnnotations = recHighlights.length > 0 || recArrows.length > 0 || hasStoryTargets;
+    const annBox  = hasAnnotations ? cap(Math.max(annW, annH), MIN_BOX, LOGICAL_SIZE) : 0;
+    // DIRECTORIAL RULE: piece movement alone must never trigger cinematic
+    // camera behaviour. Only an explicit creator marker — a Story Target,
+    // or an existing arrow/highlight annotation — does. Without one, the
+    // move plays on the stable full board regardless of how far the piece
+    // travels; holdBox/holdCamX/holdCamY and the check-context framing
+    // below both derive their floor from boxSize, so an ordinary move's
+    // post-landing framing (including an incidental check) stays full-board
+    // too, with no separate change needed there. With a marker, this is
+    // exactly the existing trajectory/annotation-aware framing.
+    const boxSize = hasAnnotations ? Math.min(LOGICAL_SIZE, Math.max(trajBox, annBox)) : LOGICAL_SIZE;
+
+    // Centre of the whole framed event (trajectory + annotations).
+    const eventCX = (Math.min(...annXs) + Math.max(...annXs))/2;
+    const eventCY = (Math.min(...annYs) + Math.max(...annYs))/2;
+
+    // Camera path, decided per axis and evaluated from the piece's own eased
+    // progress so camera and piece can never disagree about where we are in
+    // the move.
+    //
+    //  - Axis fits in the frame  -> the camera does not move on that axis.
+    //    The piece travels across a still frame, which is the clearest way
+    //    to read origin -> path -> landing, and covers every short/medium
+    //    move plus anything an annotation widened.
+    //  - Axis does not fit       -> a tracking shot. The camera leads the
+    //    piece at the start and trails it at the end by `inset`, so the
+    //    piece sweeps from one side of the frame to the other while the
+    //    camera covers LESS ground than the piece does. That is what keeps
+    //    the movement visible: a camera that travels exactly as far as the
+    //    piece (or worse, sits on it) renders the piece motionless.
+    const INSET_FRACTION = 0.30;   // piece rests 30% off-centre at each end
+    function cameraPathForAxis(p0, p1, extent, staticCentre){
+      if(extent <= boxSize + 0.5) return [staticCentre, staticCentre];
+      const dir = Math.sign(p1 - p0) || 1;
+      const inset = Math.min(boxSize * INSET_FRACTION, Math.abs(p1 - p0)/2);
+      return [p0 + inset*dir, p1 - inset*dir];
+    }
+    // Castling moves two pieces, so the camera follows their midpoint.
+    const focusStart = secondary
+      ? {x:(startCenter.x + secondaryStartCenter.x)/2, y:(startCenter.y + secondaryStartCenter.y)/2}
+      : startCenter;
+    const focusEnd = secondary
+      ? {x:(endCenter.x + secondaryEndCenter.x)/2, y:(endCenter.y + secondaryEndCenter.y)/2}
+      : endCenter;
+    const [camX0, camX1] = cameraPathForAxis(focusStart.x, focusEnd.x, trajW, eventCX);
+    const [camY0, camY1] = cameraPathForAxis(focusStart.y, focusEnd.y, trajH, eventCY);
+
+    // ---- End-of-move framing (check context) ----
+    // A checking move is a two-beat event: the piece completes its journey,
+    // then the frame settles to make the resulting check readable. During
+    // the hold the camera/box ease toward a framing that contains both the
+    // landing square and the king that is now in check. No effects are
+    // added — this is framing only.
+    const checkSq = moveRec.checkSquare ? squareCenter(moveRec.checkSquare) : null;
+    let holdBox = boxSize, holdCamX = camX1, holdCamY = camY1;
+    if(checkSq){
+      // The framing that contains BOTH the landing square and the checked
+      // king. boxSize acts purely as a FLOOR (with MIN_BOX), so this beat
+      // widens or holds and never tightens back in on the movement framing;
+      // the board is the only ceiling, so a distant king still fits.
+      const f = framingForCentres([endCenter, checkSq], Math.max(MIN_BOX, boxSize));
+      holdBox = f.box; holdCamX = f.camX; holdCamY = f.camY;
+    }
+
+    // ---- Consequence framing (human Story Targets) ----
+    // The creator marks the squares that make this move matter. The camera
+    // frames the destination TOGETHER with them, so the payoff stays anchored
+    // to the piece that caused it. Nothing is inferred: with no targets there
+    // is no consequence beat at all and the camera behaves exactly as before.
+    const storyCentres = moveRec.storyTargets.map(sq => squareCenter(sq));
+    const storyFraming = storyCentres.length
+      ? framingForCentres([endCenter].concat(storyCentres), MIN_BOX)
+      : null;
+    // PHASE C. Every exported move ends on the same beat: exactly one second
+    // of the finished, fully landed position. Previously this was a
+    // check-dependent 850/260ms that the export ALSO used as its stop
+    // condition, so the camera finished easing into the check framing on the
+    // very frame the recorder was told to stop — the settled check context
+    // existed for about one frame and was effectively never seen. The hold
+    // is now a fixed, deliberately generous beat that is timed from the
+    // LANDING FRAME (not from movement time) and must actually be rendered
+    // before the export may stop; the check framing eases in over its first
+    // part so the rest is a still, readable final state.
+    const FINAL_HOLD_MS = 1000;
+    // Fraction of the hold spent easing the camera into the check context.
+    // The remainder (~55%) is held completely static, which is what makes
+    // the final state readable rather than merely reached.
+    const HOLD_SETTLE_FRACTION = 0.45;
+
+    // --- CONTEXT FIX: These functions are now restored ---
+    // These functions are helpers *inside* exportLastMoveAsWebM
+    function drawPiecesFromSnapshotTo(targetCtx, snapshot){
+      const s = LOGICAL_SIZE/8;
+      for(let r=0;r<8;r++){
+        for(let f=0;f<8;f++){
+          const p = snapshot[r][f];
+          if(!p) continue;
+          const sq = 'abcdefgh'[f] + (8 - r);
+          const visFile = boardFlipped ? (7 - f) : f;
+          const visRank = boardFlipped ? (7 - r) : r;
+          const cx = visFile*s + s/2, cy = visRank*s + s/2;
+          const img = (pieceImages[p.color] && pieceImages[p.color][p.type]) ? pieceImages[p.color][p.type] : null;
+          if(img && img.complete){
+            const w = s * PIECE_SCALE, h = s * PIECE_SCALE;
+            targetCtx.drawImage(img, cx - w/2, cy - h/2, w, h);
+          } else {
+            targetCtx.save();
+            targetCtx.font = Math.floor(s*PIECE_SCALE) + 'px serif';
+            targetCtx.textAlign='center'; targetCtx.textBaseline='middle';
+            targetCtx.fillStyle = (p.color==='w' ? '#fff' : '#0f0f0f');
+            targetCtx.fillText(glyphFor(p.type,p.color), cx, cy);
+            targetCtx.restore();
+          }
+        }
+      }
+    }
+
+    function drawOverlayElementsToTemp(targetCtx, landed){
+      if(!landed) return;
+      const s = LOGICAL_SIZE/8;
+      for(const h of recHighlights){
+        const vf = boardFlipped ? (7 - h.file) : h.file;
+        const vr = boardFlipped ? (7 - h.rank) : h.rank;
+        drawHighlightAt(targetCtx, vf*s, vr*s, s, h.color);
+      }
+      for(const a of recArrows){
+        const from = squareCenter(a.from);
+        const to = a.to ? squareCenter(a.to) : {x:a.toX, y:a.toY};
+        drawArrow(targetCtx, from, to, a.color);
+      }
+      // Badge (Phase 5): same shared drawBadgeAt() live preview uses, so it
+      // looks identical in export — see redrawOverlay().
+      if(moveRec.badge){
+        drawBadgeAt(targetCtx, moveRec.to, moveRec.badge);
+      }
+    }
+
+    function drawBoardToTemp(landed){
+      tctx.clearRect(0,0,LOGICAL_SIZE,LOGICAL_SIZE);
+      const s = LOGICAL_SIZE/8;
+      // draw squares
+      for(let r=0;r<8;r++){
+        for(let f=0;f<8;f++){
+          const x = f*s, y = r*s;
+          const isDark = ((r+f)%2===1);
+          paintSquare(tctx, x, y, s, isDark);
+        }
+      }
+      // draw pieces from snapshot (without moving piece). Before landing,
+      // en passant's captured pawn is still on its original square; once
+      // landed it's cleared along with the mover's own origin square(s).
+      drawPiecesFromSnapshotTo(tctx, landed ? preSnapshotLanded : preSnapshotDuringMove);
+      // draw arrows & highlights
+      drawOverlayElementsToTemp(tctx, landed);
+    }
+
+    // -------------------------------------------------
+    // --- END FINAL FIX (Padding + Context) ---
+    // -------------------------------------------------
+
+    // Draws one moving piece (image, or glyph fallback) onto the temp
+    // canvas at the given computed state. Factored out so castling can call
+    // it twice per frame (king + rook) without duplicating this block.
+    function drawMovingPieceToTemp(color, type, state){
+      if(pieceImages[color] && pieceImages[color][type] && pieceImages[color][type].complete){
+        const img = pieceImages[color][type];
+        const s = LOGICAL_SIZE/8;
+        const w = s * PIECE_SCALE * state.scale, h = s * PIECE_SCALE * state.scale;
+        tctx.save();
+        tctx.translate(state.x, state.y);
+        tctx.rotate(state.angle);
+        tctx.drawImage(img, -w/2, -h/2, w, h);
+        tctx.restore();
+      } else {
+        // (Original glyph fallback)
+        tctx.save();
+        tctx.font = Math.floor((LOGICAL_SIZE/8)*PIECE_SCALE) + 'px serif';
+        tctx.textAlign='center'; tctx.textBaseline='middle';
+        tctx.fillStyle = (color==='w' ? '#fff' : '#000');
+        tctx.fillText(glyphFor(type,color), state.x, state.y);
+        tctx.restore();
+      }
+    }
+
+    // ---------------- EXPORT TIMING (Phase 4) ----------------
+    // Previously: captureStream(fps) (an internal fixed-rate auto-sampler
+    // that grabs whatever is currently on the canvas on its own clock) fed
+    // by setInterval(fn, intervalMs) with a naive frameIndex++ counter that
+    // assumed every tick landed exactly intervalMs apart. Under any main-
+    // thread jank, setInterval ticks can fire late or get coalesced, which
+    // both (a) desyncs frameIndex-based `t` from real elapsed time and
+    // (b) lets the auto-sampler capture a stale/duplicate frame if a tick
+    // fires late.
+    //
+    // Fix: use captureStream(0) — the standard "manual" capture mode where
+    // NO frame is captured automatically; we push each one explicitly via
+    // CanvasCaptureMediaStreamTrack.requestFrame() the instant it's drawn,
+    // so every captured frame is guaranteed fresh, never stale/duplicated.
+    // Pacing comes from requestAnimationFrame with `t` computed from actual
+    // elapsed wall-clock time (performance.now()) — exactly the same
+    // pattern the live animation curves (animPawn/animRook/etc.) already
+    // use — instead of assuming uniform timer ticks. This is standard,
+    // well-supported Chrome API surface (no invented/manual frame-
+    // injection mechanism); MediaRecorder is still an inherently real-time
+    // recorder, so a ~duration-long export still takes ~duration of wall
+    // time to produce — that's a property of MediaRecorder itself, not
+    // something a different timing mechanism can avoid.
+    //
+    // Feature-detected: if requestFrame() isn't available (very old
+    // Chrome), falls back to the previous fixed-rate auto-sampling so
+    // export still works, just without the stale-frame guarantee.
+    let stream = null, track = null, canRequestFrame = false;
+    try {
+      const probe = exportCanvas.captureStream(0);
+      const probeTrack = probe.getVideoTracks()[0];
+      if(probeTrack && typeof probeTrack.requestFrame === 'function'){
+        stream = probe; track = probeTrack; canRequestFrame = true;
+      }
+    } catch(e){ /* fall through to auto-rate capture below */ }
+    if(!stream){ stream = exportCanvas.captureStream(fps); }
+
+    // prepare MediaRecorder with alpha if supported. An explicit
+    // videoBitsPerSecond is required here — without it Chrome's own default
+    // bitrate heuristic for a captureStream() source is conservative and
+    // visibly soft even at 1080p, which was the other half of the reported
+    // "360p/480p-looking" quality problem (resolution alone isn't enough;
+    // a high-res frame encoded at a low bitrate still looks blurry). 12Mbps
+    // is a generous "editing source" target for a ~1080x1080 clip a few
+    // seconds long (a few MB per export) — this is meant to be re-compressed
+    // by the user's editor and then YouTube, not a final delivery file.
+    const EXPORT_BITRATE = 12_000_000;
+    let mime = 'video/webm;codecs=vp9';
+    let recorder;
+    try { recorder = new MediaRecorder(stream, {mimeType: mime, videoBitsPerSecond: EXPORT_BITRATE}); }
+    catch(e){
+      console.warn("VP9 with alpha not supported, falling back.");
+      mime = 'video/webm';
+      try {
+        recorder = new MediaRecorder(stream, {mimeType: mime, videoBitsPerSecond: EXPORT_BITRATE});
+      } catch (e2) {
+        showMessage("Video recording is not supported on this browser.", "error");
+        return;
+      }
+    }
+    const chunks = [];
+    recorder.ondataavailable = e => { if(e.data && e.data.size) chunks.push(e.data); };
+    recorder.onstop = () => {
+      const blob = new Blob(chunks, {type: mime});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const fromName = from.replace(/\s+/g,'');
+      const toName = to.replace(/\s+/g,'');
+      a.href = url;
+      a.download = `move_${fromName}_to_${toName}.webm`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(()=>{ URL.revokeObjectURL(url); }, 2000);
+
+      showMessage('Export complete!', 'success');
+    };
+
+    // Start recorder
+    recorder.start();
+    showMessage('Recording... Please wait.', 'success', duration + FINAL_HOLD_MS + 500);
+
+    // Produce frames: one rendered+pushed frame per requestAnimationFrame
+    // tick that clears the ~fps pacing gate, so file size/frame rate stay
+    // close to the requested target on high-refresh-rate displays.
+    const minFrameIntervalMs = 1000 / fps;
+    // ---------------- DETERMINISTIC FRAME SCHEDULE ----------------
+    // The clip is defined as an exact NUMBER OF FRAMES, not as a wall-clock
+    // window.
+    //
+    // Every previous version computed t (and the hold/settle progress) from
+    // performance.now(), while frames were only produced when
+    // requestAnimationFrame happened to fire. Those are two different things:
+    // the animation advanced on the wall clock whether or not a frame was
+    // produced, so whatever span the browser stalled through was simply never
+    // encoded. That made completeness a function of machine speed and
+    // background load rather than of the code — the same move exported
+    // correctly on a quiet moment and truncated on a busy one. Measured with
+    // 383ms rAF gaps: a move jumped 15-20% of its trajectory between
+    // consecutive encoded frames, the settle went 0 -> 1 in a single step,
+    // and the hold collapsed from ~21 frames to 5.
+    //
+    // Now frameIndex is the only thing that advances the animation, and it
+    // advances by exactly one per PUSHED frame. The same move therefore
+    // always encodes the same frames in the same order. A stalled or slow
+    // browser makes the clip take longer and play back slower; it can no
+    // longer make it incomplete.
+    const MOVEMENT_FRAMES = Math.max(2, Math.round((duration / 1000) * fps));
+    const HOLD_FRAMES     = Math.max(2, Math.round((FINAL_HOLD_MS / 1000) * fps));
+    // The captured piece's destruction beat is CARVED OUT of the front of
+    // the hold that already exists — it never adds frames. MOVEMENT_FRAMES,
+    // HOLD_FRAMES, SETTLE_FRAMES, TOTAL_HOLD_FRAMES and the termination test
+    // below are all untouched, so turning an effect on cannot change how
+    // long the clip is. Read once here, not per frame, so a clip is rendered
+    // with one consistent effect.
+    const fxKind   = captureEffect;
+    const fxVictim = captureVictim(moveRec);
+    const fxSeed   = fxVictim ? fxSeedFor(moveRec, fxVictim.sq) : 0;
+    const fxDir    = captureDriftDir(moveRec);
+    const FX_FRAMES = Math.max(1, Math.min(CAPTURE_FX_FRAMES, HOLD_FRAMES - 1));
+    // Frames of the hold spent easing into the check context; the rest are
+    // fully settled. Both are frame counts now, so the check context is
+    // guaranteed to be encoded across real frames instead of whatever
+    // happened to fall inside a wall-clock window.
+    const SETTLE_FRAMES   = Math.max(1, Math.round(HOLD_FRAMES * HOLD_SETTLE_FRACTION));
+
+    // ---------------- CAMERA STAGES AFTER LANDING ----------------
+    // A move can have more than one thing worth showing. The hold is an
+    // ordered list of framings; each stage eases from the previous framing
+    // over `ease` frames and then holds still for `hold` frames, all counted
+    // in schedule frames so the sequence is as deterministic as the movement.
+    //
+    //   stage 1  IMPACT       what just happened where it landed — the check
+    //                         relationship when there is one, otherwise the
+    //                         movement framing held still. This is exactly the
+    //                         previous single-stage behaviour.
+    //   stage 2  CONSEQUENCE  only when the creator marked Story Targets: the
+    //                         camera reframes to the destination plus those
+    //                         squares and holds long enough to read them.
+    //
+    // With no Story Targets the list has exactly one stage whose ease/hold are
+    // the previous SETTLE_FRAMES / HOLD_FRAMES-SETTLE_FRAMES, so a move
+    // without them is frame-for-frame identical to before.
+    const STORY_EASE_FRAMES = Math.max(1, Math.round(0.45 * fps));
+    const STORY_HOLD_FRAMES = Math.max(2, Math.round(1.0 * fps));
+    const cameraStages = [
+      { box: holdBox, camX: holdCamX, camY: holdCamY,
+        ease: SETTLE_FRAMES, hold: HOLD_FRAMES - SETTLE_FRAMES }
+    ];
+    if(storyFraming){
+      cameraStages.push({ box: storyFraming.box, camX: storyFraming.camX, camY: storyFraming.camY,
+                          ease: STORY_EASE_FRAMES, hold: STORY_HOLD_FRAMES });
+    }
+    const TOTAL_HOLD_FRAMES = cameraStages.reduce((n, st) => n + st.ease + st.hold, 0);
+
+    // The framing at a given hold frame: walk the stages, easing between each
+    // stage's framing and the one before it. Hold frame 0 is the landing
+    // frame, which always sits on the movement framing — so no consequence or
+    // check framing can ever begin before the piece is rendered settled.
+    function framingAtHold(holdIdx, fromBox, fromCamX, fromCamY){
+      let box = fromBox, cx = fromCamX, cy = fromCamY, k = holdIdx;
+      for(const st of cameraStages){
+        if(k <= st.ease){
+          const e = easeInOutCubic(k / st.ease);
+          return { box: box + (st.box - box)*e, camX: cx + (st.camX - cx)*e, camY: cy + (st.camY - cy)*e };
+        }
+        k -= st.ease;
+        if(k <= st.hold) return { box: st.box, camX: st.camX, camY: st.camY };
+        k -= st.hold;
+        box = st.box; cx = st.camX; cy = st.camY;
+      }
+      return { box, camX: cx, camY: cy };
+    }
+
+    let frameIndex = 0;   // 0..MOVEMENT_FRAMES-1 movement, ==MOVEMENT_FRAMES landing, beyond it hold
+    let lastPushedAt = -Infinity;
+    let finished = false;
+
+    function frameStep(now){
+      if(finished) return;
+      // Pace to ~fps against the wall clock so a healthy machine still
+      // produces a real-time-length clip — but this only ever DELAYS the next
+      // frame, it never skips a schedule step. Frame content is a function of
+      // frameIndex alone.
+      if(now - lastPushedAt < minFrameIntervalMs){ requestAnimationFrame(frameStep); return; }
+
+      // -------------------------------------------------
+      // --- START RENDER LOOP (with Context) ---
+      // -------------------------------------------------
+
+      // PHASE A while frameIndex<MOVEMENT_FRAMES; PHASE B exactly at
+      // MOVEMENT_FRAMES (the landing frame, holdIndex 0); PHASE C after.
+      const t = Math.min(1, frameIndex / MOVEMENT_FRAMES);
+      const landed = frameIndex >= MOVEMENT_FRAMES;
+      const holdIndex = landed ? (frameIndex - MOVEMENT_FRAMES) : -1;
+      // Hold progress, counted in FRAMES from the landing frame. The landing
+      // frame itself is holdIndex 0, so no end framing can begin before the
+      // piece has been rendered settled on its destination.
+      const h = landed ? Math.min(1, holdIndex / TOTAL_HOLD_FRAMES) : 0;
+
+      // 1. Draw the board, static pieces, and overlays
+      drawBoardToTemp(landed);
+
+      // 2. Compute moving piece state at t, and the secondary (rook) piece's
+      //    state too when castling — same pieceTrajectory() the live
+      //    animation and the camera framing use.
+      //
+      //    Once landed (t>=1), the state is pinned to the exact resting
+      //    pose instead of calling pieceTrajectory() again at t=1. Several
+      //    of its per-type curves carry a flourish that never fully
+      //    resolves at t=1 — e.g. the default/pawn curve's hop
+      //    (`-6*bob`) is still -3px at t=1, and the king's own curve
+      //    deliberately eases to t*0.9 and never reaches 1 — so re-querying
+      //    pieceTrajectory(...,1) every hold-phase frame kept rendering the
+      //    piece a few pixels off its square for the entire settle/check
+      //    beat, which reads as "still in transit" right when the check
+      //    context is supposed to be taking over. The live preview never
+      //    has this problem because it simply stops drawing the animated
+      //    piece once its own loop finishes (see animPiece); this makes
+      //    export match that already-correct behaviour instead of changing
+      //    any in-flight curve.
+      const state = landed
+        ? {x: endCenter.x, y: endCenter.y, angle: 0, scale: 1, e: 1}
+        : pieceTrajectory(travelType, startCenter, endCenter, t);
+      let secondaryState = null;
+      if(secondary){
+        secondaryState = landed
+          ? {x: secondaryEndCenter.x, y: secondaryEndCenter.y, angle: 0, scale: 1, e: 1}
+          : pieceTrajectory(secondary.type, secondaryStartCenter, secondaryEndCenter, t);
+      }
+
+      // 2b. The captured piece's destruction beat, drawn on the static board
+      //     but UNDER the arriving piece, so the capture still reads as one
+      //     piece taking another. Driven by holdIndex alone: at holdIndex 0
+      //     the victim is still whole, and once the beat is over it is gone
+      //     for the entire remainder of the hold.
+      if(landed && fxVictim && fxKind !== 'off'){
+        drawCaptureEffect(tctx, fxKind, fxVictim, holdIndex / FX_FRAMES, fxSeed, fxDir);
+      }
+
+      // 3. Draw the moving piece(s) on top of the context. A promotion only
+      //    becomes the promoted piece once the pawn has actually arrived.
+      const drawnType = landed ? landType : travelType;
+      drawMovingPieceToTemp(movingColor, drawnType, state);
+      if(secondary){
+        drawMovingPieceToTemp(secondary.color, secondary.type, secondaryState);
+      }
+
+      // -------------------------------------------------
+      // --- END RENDER LOOP ---
+      // -------------------------------------------------
+
+      // 4. Advance the camera. NOT pinned to the piece: a piece held at the
+      //    exact centre of every frame reads as motionless while the board
+      //    slides past it, which is what made the movement (the knight's arc
+      //    especially) look like it wasn't happening. When the whole
+      //    trajectory fits the frame the camera simply doesn't move and the
+      //    piece travels across a static shot. Otherwise it tracks with a
+      //    dead zone, so it only gives ground once the piece nears the edge
+      //    and the piece still moves relative to the frame.
+      // The camera advances on the SAME eased progress the piece uses, so
+      // the two never disagree — but over a shorter distance, which is what
+      // makes the piece visibly travel across the frame.
+      const prog = state.e;
+      const camX = camX0 + (camX1 - camX0) * prog;
+      const camY = camY0 + (camY1 - camY0) * prog;
+
+      // While the piece is travelling the camera is the movement camera. Once
+      // landed, walk the camera stages (impact, then the consequence beat when
+      // the creator marked Story Targets). Each stage eases in and is then
+      // HELD still, so a framing never arrives just as the recorder stops.
+      const framing = landed
+        ? framingAtHold(holdIndex, boxSize, camX, camY)
+        : { box: boxSize, camX, camY };
+      const frameBox = framing.box, frameCamX = framing.camX, frameCamY = framing.camY;
+
+      // Compute crop (ensure crop fits inside board)
+      const half = frameBox / 2;
+      let sx = Math.max(0, Math.min(LOGICAL_SIZE - frameBox, frameCamX - half));
+      let sy = Math.max(0, Math.min(LOGICAL_SIZE - frameBox, frameCamY - half));
+
+      // 5. Draw cropped region from temp (transparent) canvas to final
+      //    (export) canvas. sx/sy/boxSize are in the 0..LOGICAL_SIZE
+      //    logical space; temp's PHYSICAL pixels are EXPORT_RENDER_SCALE
+      //    times larger (see temp.width/height above), so the source rect
+      //    passed to drawImage must be scaled up to match — drawImage's
+      //    9-argument form reads the source rectangle in the source
+      //    canvas's actual physical pixels, not through its transform.
+      ectx.clearRect(0,0,EXPORT_SIZE,EXPORT_SIZE);
+      ectx.drawImage(
+        temp,
+        sx*EXPORT_RENDER_SCALE, sy*EXPORT_RENDER_SCALE, frameBox*EXPORT_RENDER_SCALE, frameBox*EXPORT_RENDER_SCALE,
+        0, 0, EXPORT_SIZE, EXPORT_SIZE
+      );
+
+      // 6. Push exactly this frame into the capture stream. Every frame the
+      //    schedule defines is pushed — there is no throttle decision here
+      //    any more, because the pacing above already decided that this tick
+      //    produces a frame. The schedule advances only on a pushed frame, so
+      //    a frame can never be skipped, including the landing frame.
+      //    (In the auto-rate fallback the browser samples the canvas on its
+      //    own clock; the schedule still advances identically, which is what
+      //    lets the loop terminate in that mode at all — the previous
+      //    termination test counted manually-pushed frames, so with
+      //    requestFrame unavailable it could never be satisfied and the loop
+      //    ran forever without ever stopping the recorder.)
+      if(canRequestFrame) track.requestFrame();
+      lastPushedAt = now;
+      frameIndex++;
+
+      // PHASE D. Stop only once the landing frame AND every hold frame have
+      // actually been rendered and pushed. Termination is now a pure function
+      // of frames emitted: no elapsed-time test can end the export early, and
+      // no camera or encoder timing participates in the decision.
+      if(holdIndex < TOTAL_HOLD_FRAMES){
+        requestAnimationFrame(frameStep);
+      } else {
+        finished = true;
+        // Let the last pushed frames reach the encoder before stopping. The
+        // hold deliberately ends on several identical settled frames, so even
+        // if the encoder drops the very last one the settled state is still
+        // present in the file.
+        setTimeout(()=>{ recorder.stop(); }, Math.max(120, minFrameIntervalMs * 3));
+      }
+    }
+    requestAnimationFrame(frameStep);
+  } catch (err) {
+    console.error("Export failed:", err);
+    showMessage("Export failed! See console for error.", "error");
+  }
+}
+
+/* ---------------- INIT ---------------- */
+window.addEventListener('load', ()=>{ try{ readyInit(); } catch(e){ console.error(e); readyInit(); } });
+
+/* ---------------- NEW: UI Util Functions ---------------- */
+function updateStatus() {
+  if (!game) return;
+  let status = game.turn() === 'w' ? "White's Turn" : "Black's Turn";
+  
+  if (game.in_checkmate()) {
+      status = `Checkmate! ${game.turn() === 'w' ? 'Black' : 'White'} wins.`;
+  } else if (game.in_stalemate()) {
+      status = 'Stalemate! Game is a draw.';
+  } else if (game.in_draw()) {
+      status = 'Draw!';
+  } else if (game.in_check()) {
+      status += ' (Check)';
+  }
+  
+  statusBar.textContent = status;
+  statusBar.style.color = game.in_check() ? '#F44336' : 'white';
+  statusBar.style.display = 'block';
+}
+
+function showMessage(message, type = 'success', duration = 3000) {
+    messageBox.textContent = message;
+    messageBox.className = type === 'error' ? 'error' : 'success';
+    messageBox.classList.add('show');
+    
+    setTimeout(() => {
+        messageBox.classList.remove('show');
+    }, duration);
+}
+
+/* ---------------- UTIL (Original) ---------------- */
+function hexToRgba(hex,a=1){ 
+    const c = hex.replace('#',''); 
+    const bigint = parseInt(c,16); 
+    const r=(bigint>>16)&255; 
+    const g=(bigint>>8)&255; 
+    const b=bigint&255; 
+    return `rgba(${r},${g},${b},${a})`; 
+}
+window.addEventListener('resize', debounce(()=>{ sizeBoardExplicit(); }, 120));
+function debounce(fn, wait){ let t; return function(){ clearTimeout(t); t = setTimeout(fn, wait); }; }
+
+</script>
+</body>
+</html>
