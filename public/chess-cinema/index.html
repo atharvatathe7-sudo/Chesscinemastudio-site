@@ -1676,6 +1676,7 @@ function selectMove(ply){
   if(ply < 1 || ply > Math.max(historyPointer, importedLimit)) return;
   selectedPly = ply;
   previewBoard = boardAfterPly(ply);
+  updateStatus(); // the White/Black-to-move label must describe the position now shown
   drawBoard();
   redrawOverlay();
   updateHistory(); // also refreshes the timeline + annotation panel, see below
@@ -1974,7 +1975,36 @@ function animPiece(type,start,end,img,duration,onComplete){
 // Prev/Next navigation buttons are the same operation on the same
 // moveHistory/historyPointer — PGN navigation deliberately does not get a
 // second, parallel history system. Both are safe no-ops at the ends.
+// Prev/Next/Undo/Redo step from the move the user is LOOKING at. Picking a
+// timeline move only sets a read-only preview (selectedPly/previewBoard) and
+// leaves `game`/historyPointer where they were, so without this the step ran
+// from the stale live pointer: Next after picking move 5 of an imported game
+// landed on move 1, and Prev after picking move 4 of a finished game landed on
+// move 12. This brings the live engine to the selected ply with its own
+// undo()/move() (same calls the steps below use), then drops the preview. It is
+// a no-op whenever nothing is being previewed (selectedPly === historyPointer,
+// which syncTransientMoveState() maintains after every step).
+function syncLiveToSelection(){
+  if(!selectedPly || selectedPly === historyPointer) return;
+  const target = Math.min(selectedPly, moveHistory.length);
+  try{
+    while(historyPointer > target){
+      if(!game.undo()) break;
+      historyPointer--;
+    }
+    while(historyPointer < target){
+      const rec = moveHistory[historyPointer];
+      const moveObj = { from: rec.from, to: rec.to };
+      if(rec.promotion) moveObj.promotion = rec.promotion;
+      if(!game.move(moveObj)) break;
+      historyPointer++;
+    }
+  }catch(e){ /* historyPointer already reflects however far the engine got */ }
+  syncTransientMoveState();
+  updateStatus(); drawBoard(); redrawOverlay(); updateHistory();
+}
 function stepBackward(){
+  syncLiveToSelection();
   if(historyPointer <= 0) return false; // already at the start position
   try{
     game.undo();
@@ -1985,6 +2015,7 @@ function stepBackward(){
   }catch(e){ return false; }
 }
 function stepForward(){
+  syncLiveToSelection();
   if(historyPointer >= moveHistory.length) return false; // nothing ahead
   const rec = moveHistory[historyPointer];
   const moveObj = { from: rec.from, to: rec.to };
@@ -3083,8 +3114,26 @@ window.addEventListener('load', ()=>{ try{ readyInit(); } catch(e){ console.erro
 /* ---------------- NEW: UI Util Functions ---------------- */
 function updateStatus() {
   if (!game) return;
+
+  // While a timeline move other than the live position is being previewed
+  // (previewBoard set), the live engine describes a DIFFERENT position than the
+  // board on screen, so the label is derived from that move's own record: the
+  // side that did NOT just move is to move; san ends in '#' for mate and the
+  // record's checkSquare is set when the move gave check. Stalemate/draw are not
+  // recorded per move, so a previewed final position shows its turn label only.
+  const previewRec = (previewBoard && selectedPly) ? moveHistory[selectedPly - 1] : null;
+  if (previewRec) {
+    const gaveCheck = !!previewRec.checkSquare;
+    statusBar.textContent = (previewRec.san && previewRec.san.endsWith('#'))
+      ? `Checkmate! ${previewRec.color === 'w' ? 'White' : 'Black'} wins.`
+      : (previewRec.color === 'w' ? "Black's Turn" : "White's Turn") + (gaveCheck ? ' (Check)' : '');
+    statusBar.style.color = gaveCheck ? '#F44336' : 'white';
+    statusBar.style.display = 'block';
+    return;
+  }
+
   let status = game.turn() === 'w' ? "White's Turn" : "Black's Turn";
-  
+
   if (game.in_checkmate()) {
       status = `Checkmate! ${game.turn() === 'w' ? 'Black' : 'White'} wins.`;
   } else if (game.in_stalemate()) {
