@@ -110,6 +110,11 @@ button:active, button.active {
 .small{font-size:13px;color:var(--dim-text)}
 .controls-flex{display:flex;gap:6px;flex-wrap:wrap}
 .ctl{display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
+.quickstart{width:100%;max-width:600px;box-sizing:border-box;background:var(--panel);border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:8px 12px;font-size:13px;color:var(--dim-text)}
+.quickstart summary{cursor:pointer;font-weight:600;color:var(--light-text)}
+.quickstart ol{margin:8px 0 2px;padding-left:20px;line-height:1.5}
+.quickstart li{margin-bottom:4px}
+.quickstart b{color:var(--light-text);font-weight:600}
 /* The shared 8px control padding squashed the colour well to a grey sliver,
    so the chosen annotation colour was never visible. Scoped to #color only. */
 #color{padding:2px;width:44px;height:34px;box-sizing:border-box;cursor:pointer}
@@ -224,6 +229,20 @@ button:active, button.active {
     <h1>Chess Cinema</h1>
     <div class="small">Final build: Full rules, cinematic animation, TRUE transparent export, and pinch-to-zoom.</div>
 
+    <!-- Quick start: collapsed by default so the board is not pushed down. Every
+         button name below exists in this page; nothing here claims analysis or
+         full-game video export. -->
+    <details class="quickstart" id="quickstart">
+      <summary>How to use Chess Cinema</summary>
+      <ol>
+        <li><b>Import a game:</b> paste a PGN into the box and press <b>Import PGN</b>, or press <b>Load sample game</b> to try a short one.</li>
+        <li><b>Step through moves:</b> use <b>‹ Prev</b> / <b>Next ›</b>, or click any move in the <b>Move Timeline</b>.</li>
+        <li><b>Watch a move:</b> select a move, then press <b>Play Animation</b> to replay it. Captures use the <b>Capture FX</b> you pick.</li>
+        <li><b>Annotate:</b> choose <b>Draw Arrow</b>, <b>Highlight</b> or <b>Story Target</b> in <b>Mode</b>, then drag or click on the board. <b>Color</b> sets the annotation color.</li>
+        <li><b>Export:</b> select a move and press <b>Export Animation</b> to save that one move as a WebM video.</li>
+      </ol>
+    </details>
+
     <div class="container">
       <div class="stage" id="stage">
         
@@ -299,8 +318,9 @@ button:active, button.active {
         <div style="margin-top:8px">
           <label class="small">Import PGN</label>
           <textarea id="pgnInput" placeholder="Paste PGN from Chess.com / Lichess here, then press Import." style="width:100%;box-sizing:border-box;height:60px;"></textarea>
-          <div class="row" style="margin-top:4px;">
+          <div class="row controls-flex" style="margin-top:4px;">
             <button id="importPgn">Import PGN</button>
+            <button id="loadSample" title="Loads a short built-in game (Legal's mate) through the normal PGN import. Replaces the current game.">Load sample game</button>
             <span class="small" id="pgnStatus"></span>
           </div>
         </div>
@@ -2137,6 +2157,29 @@ function importPgn(text){
 }
 document.getElementById('importPgn').addEventListener('click', ()=>{
   importPgn(document.getElementById('pgnInput').value);
+});
+
+/* ---------------- SAMPLE GAME ----------------
+   A fixed, legal PGN (Legal's mate: three captures, a check, a checkmate)
+   fed through the SAME importPgn() a pasted PGN uses — same chess.js
+   validation, same move records, same error feedback; no second game-state
+   path. It deliberately does not touch the PGN text box, so a PGN the user
+   pasted but has not imported yet is never overwritten.
+   importPgn() replaces the whole game (moves, arrows, highlights, notes per
+   move), so when there is a game on the board the user is asked first. A
+   mid-flight move animation holds global state (animHideSquares) that its
+   completion callback later writes back, so loading is refused until it ends. */
+const SAMPLE_PGN = '[Event "Sample game: Legal\'s mate"]\n\n1. e4 e5 2. Nf3 d6 3. Bc4 Bg4 4. Nc3 g6 5. Nxe5 Bxd1 6. Bxf7+ Ke7 7. Nd5#';
+document.getElementById('loadSample').addEventListener('click', ()=>{
+  if(animHideSquares.size > 0){
+    showMessage('Wait for the current animation to finish, then load the sample game.', 'error');
+    return;
+  }
+  if(moveHistory.length > 0 &&
+     !window.confirm('Load the sample game? This replaces the current game, including its arrows, highlights and annotations.')){
+    return;
+  }
+  if(importPgn(SAMPLE_PGN) && viewTransform.scale > 1.01) unzoomSmooth();
 });
 document.getElementById('flip').addEventListener('click', ()=>{ boardFlipped = !boardFlipped; drawBoard(); redrawOverlay(); });
 document.getElementById('captureFx').addEventListener('change', (e)=>{ captureEffect = e.target.value; });
