@@ -109,6 +109,10 @@ button:active, button.active {
 
 .small{font-size:13px;color:var(--dim-text)}
 .controls-flex{display:flex;gap:6px;flex-wrap:wrap}
+.ctl{display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
+/* The shared 8px control padding squashed the colour well to a grey sliver,
+   so the chosen annotation colour was never visible. Scoped to #color only. */
+#color{padding:2px;width:44px;height:34px;box-sizing:border-box;cursor:pointer}
 .playerBox{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
 .playerBox input{background:transparent;border:1px solid rgba(255,255,255,0.04);padding:6px;border-radius:6px;color:var(--light)}
 .history{max-height:160px;overflow:auto;margin-top:8px;border-top:1px dashed rgba(255,255,255,0.03);padding-top:8px}
@@ -210,7 +214,7 @@ button:active, button.active {
 }
 @media(max-width:720px){ 
   .container{flex-direction:column;align-items:center} 
-  .panel{width:92vw} 
+  .panel{width:92vw;box-sizing:border-box} 
   .stage { width: 92vw; }
 }
 </style>
@@ -248,27 +252,36 @@ button:active, button.active {
           <input id="blackFlag" type="text" placeholder="🇺🇸" value="🇺🇸" style="width:56px" class="small">
         </div>
 
-        <div class="row">
-          <label>Mode:</label>
-          <select id="mode">
-            <option value="move">Move (drag)</option>
-            <option value="arrow">Draw Arrow (Shift+drag)</option>
-            <option value="highlight">Highlight (Alt+click)</option>
-            <option value="story">Story Target (click)</option>
-          </select>
-          <label>Color</label>
-          <input id="color" type="color" value="#FFC857">
+        <!-- controls-flex lets this row wrap inside the 360px panel; each
+             label+control pair is kept together in a .ctl so wrapping never
+             separates a label from its control. -->
+        <div class="row controls-flex">
+          <span class="ctl">
+            <label>Mode:</label>
+            <select id="mode">
+              <option value="move">Move (drag)</option>
+              <option value="arrow">Draw Arrow (Shift+drag)</option>
+              <option value="highlight">Highlight (Alt+click)</option>
+              <option value="story">Story Target (click)</option>
+            </select>
+          </span>
+          <span class="ctl">
+            <label>Color</label>
+            <input id="color" type="color" value="#FFC857">
+          </span>
           <button id="clearAll">Clear</button>
-          <label>Capture FX</label>
-          <select id="captureFx">
-            <option value="off">Off</option>
-            <option value="dissolve" selected>Dissolve</option>
-            <option value="shatter">Shatter</option>
-            <option value="energy">Energy Dissolve</option>
-            <option value="implosion">Implosion</option>
-            <option value="drift">Directional Dissolve</option>
-            <option value="burst">Impact Burst</option>
-          </select>
+          <span class="ctl">
+            <label>Capture FX</label>
+            <select id="captureFx">
+              <option value="off">Off</option>
+              <option value="dissolve" selected>Dissolve</option>
+              <option value="shatter">Shatter</option>
+              <option value="energy">Energy Dissolve</option>
+              <option value="implosion">Implosion</option>
+              <option value="drift">Directional Dissolve</option>
+              <option value="burst">Impact Burst</option>
+            </select>
+          </span>
         </div>
 
         <div class="row controls-flex">
