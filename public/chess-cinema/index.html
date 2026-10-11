@@ -1648,7 +1648,20 @@ function getActiveRecord(){
 // second full board snapshot per move.
 function boardAfterPly(ply){
   if(ply === historyPointer) return null;
-  return moveHistory[ply] ? moveHistory[ply].preSnapshot : null;
+  if(moveHistory[ply]) return moveHistory[ply].preSnapshot;
+  // The LAST recorded move has no later record to borrow a "before" from, and
+  // returning null here made the preview silently fall back to the live board
+  // (e.g. the start position of a freshly imported game). Rebuild its "after"
+  // board from its own record instead: its vacated pre-move board (origin, any
+  // castling-rook origin and en passant victim cleared) plus the piece that
+  // landed (the promoted piece, if any) and castling's rook.
+  const rec = moveHistory[ply - 1];
+  if(!rec) return null;
+  const snap = vacatedSnapshot(rec);
+  const put = (sq, type, color) => { snap[8 - parseInt(sq[1], 10)]['abcdefgh'.indexOf(sq[0])] = { type, color }; };
+  put(rec.to, rec.resultPieceType, rec.color);
+  if(rec.secondary) put(rec.secondary.to, rec.secondary.type, rec.secondary.color);
+  return snap;
 }
 
 // A clone of `record.preSnapshot` with every square that must not show a
