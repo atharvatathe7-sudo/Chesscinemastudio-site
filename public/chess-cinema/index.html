@@ -118,8 +118,6 @@ button:active, button.active {
 /* The shared 8px control padding squashed the colour well to a grey sliver,
    so the chosen annotation colour was never visible. Scoped to #color only. */
 #color{padding:2px;width:44px;height:34px;box-sizing:border-box;cursor:pointer}
-.playerBox{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
-.playerBox input{background:transparent;border:1px solid rgba(255,255,255,0.04);padding:6px;border-radius:6px;color:var(--light)}
 .history{max-height:160px;overflow:auto;margin-top:8px;border-top:1px dashed rgba(255,255,255,0.03);padding-top:8px}
 .hotkeys{margin-top:8px;color:var(--dim-text);font-size:13px}
 #removeToggle.active{background:var(--accent)}
@@ -259,18 +257,6 @@ button:active, button.active {
       </div>
 
       <div class="panel">
-        <div class="playerBox">
-          <input id="whiteName" type="text" placeholder="White name" value="White" class="small">
-          <input id="whiteElo" type="text" placeholder="ELO" value="1600" style="width:80px" class="small">
-          <input id="whiteFlag" type="text" placeholder="🇮🇳" value="🇮🇳" style="width:56px" class="small">
-        </div>
-
-        <div class="playerBox">
-          <input id="blackName" type="text" placeholder="Black name" value="Black" class="small">
-          <input id="blackElo" type="text" placeholder="ELO" value="1650" style="width:80px" class="small">
-          <input id="blackFlag" type="text" placeholder="🇺🇸" value="🇺🇸" style="width:56px" class="small">
-        </div>
-
         <!-- controls-flex lets this row wrap inside the 360px panel; each
              label+control pair is kept together in a .ctl so wrapping never
              separates a label from its control. -->
