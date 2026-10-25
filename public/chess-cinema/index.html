@@ -2406,7 +2406,21 @@ function animateTransform(from,to,dur){
    on a transparent background.
    THE TYPO 'LOGICAL_GSIZE' IS FIXED.
 */
+// One export at a time. A second click during a recording used to start a
+// second, concurrent MediaRecorder and a second download. Every exit path of
+// exportLastMoveAsWebM releases this lock (download, unsupported recorder,
+// recorder error, a throw while rendering a frame, or a setup exception).
+let exportInProgress = false;
+function setExportBusy(busy){
+  exportInProgress = busy;
+  const btn = document.getElementById('exportAnim');
+  btn.disabled = busy;
+  btn.textContent = busy ? 'Exporting…' : 'Export Animation';
+}
+
 function exportLastMoveAsWebM(moveRec, opts={fps:EXPORT_FPS}){
+  if(exportInProgress) return;
+  setExportBusy(true);
   try {
     const fps = opts.fps || EXPORT_FPS;
 
@@ -2856,25 +2870,31 @@ function exportLastMoveAsWebM(moveRec, opts={fps:EXPORT_FPS}){
         recorder = new MediaRecorder(stream, {mimeType: mime, videoBitsPerSecond: EXPORT_BITRATE});
       } catch (e2) {
         showMessage("Video recording is not supported on this browser.", "error");
+        setExportBusy(false);
         return;
       }
     }
     const chunks = [];
     recorder.ondataavailable = e => { if(e.data && e.data.size) chunks.push(e.data); };
     recorder.onstop = () => {
-      const blob = new Blob(chunks, {type: mime});
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      const fromName = from.replace(/\s+/g,'');
-      const toName = to.replace(/\s+/g,'');
-      a.href = url;
-      a.download = `move_${fromName}_to_${toName}.webm`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(()=>{ URL.revokeObjectURL(url); }, 2000);
+      try {
+        if(aborted) return; // a failed export never downloads a partial file
+        const blob = new Blob(chunks, {type: mime});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const fromName = from.replace(/\s+/g,'');
+        const toName = to.replace(/\s+/g,'');
+        a.href = url;
+        a.download = `move_${fromName}_to_${toName}.webm`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(()=>{ URL.revokeObjectURL(url); }, 2000);
 
-      showMessage('Export complete!', 'success');
+        showMessage('Export complete!', 'success');
+      } finally {
+        setExportBusy(false);
+      }
     };
 
     // Start recorder
@@ -2977,13 +2997,30 @@ function exportLastMoveAsWebM(moveRec, opts={fps:EXPORT_FPS}){
     let lastPushedAt = -Infinity;
     let finished = false;
 
+    // A throw inside a requestAnimationFrame callback escapes the try/catch
+    // around this function, which used to leave the export (and now its busy
+    // lock) stuck forever. Each frame runs guarded; a failure aborts cleanly:
+    // the recorder is stopped, no partial file is downloaded, the lock is
+    // released. Frame content is untouched — frameStep itself is unchanged.
+    let aborted = false;
+    function abortExport(err){
+      if(aborted) return;
+      aborted = true; finished = true;
+      console.error("Export failed:", err);
+      try { if(recorder.state !== 'inactive') recorder.stop(); } catch(e){}
+      setExportBusy(false);
+      showMessage("Export failed! See console for error.", "error");
+    }
+    function guardedFrameStep(now){ try { frameStep(now); } catch(err){ abortExport(err); } }
+    recorder.onerror = (e) => abortExport(e && e.error ? e.error : e);
+
     function frameStep(now){
       if(finished) return;
       // Pace to ~fps against the wall clock so a healthy machine still
       // produces a real-time-length clip — but this only ever DELAYS the next
       // frame, it never skips a schedule step. Frame content is a function of
       // frameIndex alone.
-      if(now - lastPushedAt < minFrameIntervalMs){ requestAnimationFrame(frameStep); return; }
+      if(now - lastPushedAt < minFrameIntervalMs){ requestAnimationFrame(guardedFrameStep); return; }
 
       // -------------------------------------------------
       // --- START RENDER LOOP (with Context) ---
@@ -3114,7 +3151,7 @@ function exportLastMoveAsWebM(moveRec, opts={fps:EXPORT_FPS}){
       // of frames emitted: no elapsed-time test can end the export early, and
       // no camera or encoder timing participates in the decision.
       if(holdIndex < TOTAL_HOLD_FRAMES){
-        requestAnimationFrame(frameStep);
+        requestAnimationFrame(guardedFrameStep);
       } else {
         finished = true;
         // Let the last pushed frames reach the encoder before stopping. The
@@ -3124,10 +3161,11 @@ function exportLastMoveAsWebM(moveRec, opts={fps:EXPORT_FPS}){
         setTimeout(()=>{ recorder.stop(); }, Math.max(120, minFrameIntervalMs * 3));
       }
     }
-    requestAnimationFrame(frameStep);
+    requestAnimationFrame(guardedFrameStep);
   } catch (err) {
     console.error("Export failed:", err);
     showMessage("Export failed! See console for error.", "error");
+    setExportBusy(false);
   }
 }
 
