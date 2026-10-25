@@ -444,6 +444,7 @@ let viewTransform = { scale: 1, panX: 0, panY: 0 };
 let isPanning = false;
 let isPinching = false;
 let lastPinchDist = 0;
+let pinchAnchor = null; // board point under the fingers at pinch start, in #canvasWrap's unscaled px
 let panStart = { x: 0, y: 0 };
 let lastPan = { x: viewTransform.panX, y: viewTransform.panY };
 let activePointers = new Map(); // For multi-touch tracking
@@ -641,9 +642,10 @@ function drawBoard(){
   const s = LOGICAL_SIZE/8;
 
   ctx.save();
-  // NEW: Apply pan/zoom transform to the base canvas
-  ctx.translate(viewTransform.panX, viewTransform.panY);
-  ctx.scale(viewTransform.scale, viewTransform.scale);
+  // Pan/zoom is applied ONCE, as the CSS transform on #canvasWrap (see
+  // animateTransform/onMove), which getCanvasPos() already accounts for.
+  // Both canvases therefore always draw in plain 0..LOGICAL_SIZE logical
+  // coordinates; re-applying viewTransform here as well zoomed twice.
 
   ctx.clearRect(0,0,LOGICAL_SIZE,LOGICAL_SIZE);
   for(let r=0;r<8;r++){
@@ -768,9 +770,7 @@ function redrawOverlay(landed = true){
   octx.clearRect(0,0,LOGICAL_SIZE,LOGICAL_SIZE);
 
   octx.save();
-  // NEW: Apply pan/zoom to the overlay canvas
-  octx.translate(viewTransform.panX, viewTransform.panY);
-  octx.scale(viewTransform.scale, viewTransform.scale);
+  // Logical coordinates only — pan/zoom is the CSS transform (see drawBoard).
 
   const s = LOGICAL_SIZE/8;
   // Move-scoped: only the active record's (selected, or latest-move-by-
@@ -1226,6 +1226,14 @@ function onDown(e){
       lastPinchDist = getPinchDist();
       panStart = getPinchMidpoint();
       lastPan = { x: viewTransform.panX, y: viewTransform.panY };
+      // #canvasWrap scales about its CENTRE (transform-origin), so an unscaled
+      // local point P is shown at holderOrigin + O + scale*(P - O) + pan.
+      // Invert that for the midpoint to find the board point being pinched.
+      const hr = boardHolder.getBoundingClientRect();
+      pinchAnchor = {
+        x: hr.width / 2 + (panStart.x - hr.left - hr.width / 2 - viewTransform.panX) / viewTransform.scale,
+        y: hr.height / 2 + (panStart.y - hr.top - hr.height / 2 - viewTransform.panY) / viewTransform.scale
+      };
       return;
   }
   
@@ -1327,31 +1335,17 @@ function onMove(e){
       const scaleAmount = newDist / lastPinchDist;
       lastPinchDist = newDist;
 
-      // Pan logic
-      const dx = mid.x - panStart.x;
-      const dy = mid.y - panStart.y;
-      const newPanX_pre = lastPan.x + dx;
-      const newPanY_pre = lastPan.y + dy;
-
-      // Zoom logic
-      const rect = boardCanvas.getBoundingClientRect();
-      const displayWidth = rect.width;
-      const displayHeight = rect.height;
-
-      // Calculate the point on the canvas (in display px) that is under the pinch center
-      const zoomX_display = mid.x - rect.left;
-      const zoomY_display = mid.y - rect.top;
-
-      // Convert this to a point in the *logical* (600x600) scaled space
-      const zoomX_logical = (zoomX_display - newPanX_pre) / viewTransform.scale;
-      const zoomY_logical = (zoomY_display - newPanY_pre) / viewTransform.scale;
-      
       const newScale = Math.max(1, Math.min(viewTransform.scale * scaleAmount, 5));
-      
-      // Calculate the new panX/Y to keep the logical point under the pinch center
-      const newPanX = zoomX_display - (zoomX_logical * newScale);
-      const newPanY = zoomY_display - (zoomY_logical * newScale);
-      
+
+      // Keep the pinched board point (pinchAnchor) under the fingers' current
+      // midpoint — which also pans with the fingers — using the same
+      // centre-origin model as the CSS transform. Fully zoomed out snaps back
+      // to the home position.
+      const hr = boardHolder.getBoundingClientRect();
+      const ox = hr.width / 2, oy = hr.height / 2;
+      const newPanX = newScale <= 1 ? 0 : (mid.x - hr.left) - ox - newScale * (pinchAnchor.x - ox);
+      const newPanY = newScale <= 1 ? 0 : (mid.y - hr.top) - oy - newScale * (pinchAnchor.y - oy);
+
       // Apply transform
       viewTransform.scale = newScale;
       viewTransform.panX = newPanX;
@@ -1385,10 +1379,8 @@ function onMove(e){
   if(arrowTemp){ 
     redrawOverlay(); 
     
-    // Draw arrow on overlay (needs pan/zoom)
+    // Draw arrow on overlay (logical coords; pan/zoom is the CSS transform)
     octx.save();
-    octx.translate(viewTransform.panX, viewTransform.panY);
-    octx.scale(viewTransform.scale, viewTransform.scale);
     drawArrow(octx, squareCenter(arrowTemp.from), {x:p.x,y:p.y}, currentAnnotationColor('arrow'));
     octx.restore();
     return; 
@@ -1399,11 +1391,9 @@ function onMove(e){
     const s = LOGICAL_SIZE/8;
     const img = pieceImages[dragging.piece.color] && pieceImages[dragging.piece.color][dragging.piece.type];
     
-    // Draw on overlay, respecting pan/zoom
+    // Draw on overlay (logical coords; pan/zoom is the CSS transform)
     octx.save();
-    octx.translate(viewTransform.panX, viewTransform.panY);
-    octx.scale(viewTransform.scale, viewTransform.scale);
-    
+
     if(img && img.complete){
       const w = s*PIECE_SCALE * 1.1, h = s*PIECE_SCALE * 1.1; // Slightly larger
       octx.globalAlpha = 0.8;
@@ -1789,8 +1779,6 @@ function runCaptureEffectPreview(record, victim, toHide, onComplete){
     drawBoard();
     redrawOverlay();
     octx.save();
-    octx.translate(viewTransform.panX, viewTransform.panY);
-    octx.scale(viewTransform.scale, viewTransform.scale);
     drawCaptureEffect(octx, captureEffect, victim, f / CAPTURE_FX_FRAMES, seed, dir);
     octx.restore();
     octx.globalAlpha = 1;
@@ -1869,13 +1857,8 @@ function drawMovingImage(img, x, y, scale=1, angle=0, useOverlay=true){
   if(!img || !img.complete) return;
   const s = LOGICAL_SIZE/8;
   const w = s*PIECE_SCALE*scale, h = s*PIECE_SCALE*scale;
-  ctxTarget.save(); 
-  // NEW: Apply pan/zoom IF it's the overlay
-  if (useOverlay) {
-      ctxTarget.translate(viewTransform.panX, viewTransform.panY);
-      ctxTarget.scale(viewTransform.scale, viewTransform.scale);
-  }
-  ctxTarget.translate(x,y); 
+  ctxTarget.save();
+  ctxTarget.translate(x,y);
   ctxTarget.rotate(angle); 
   ctxTarget.drawImage(img, -w/2, -h/2, w, h); 
   ctxTarget.restore();
@@ -1942,8 +1925,6 @@ function drawLiveDecoration(type, start, end, st, t){
   const s = LOGICAL_SIZE/8, e = st.e;
   function withView(fn){
     octx.save();
-    octx.translate(viewTransform.panX, viewTransform.panY);
-    octx.scale(viewTransform.scale, viewTransform.scale);
     fn();
     octx.restore();
   }
@@ -2403,8 +2384,8 @@ function animateTransform(from,to,dur){
     else {
       // Snap to final state. NOTE: `to` is shaped {tx,ty,scale} (this
       // function's own local naming) while `viewTransform` is shaped
-      // {panX,panY,scale} (used everywhere else, e.g. drawBoard()'s
-      // ctx.translate(viewTransform.panX, viewTransform.panY)) — assigning
+      // {panX,panY,scale} (used everywhere else, e.g. pinch-zoom and the
+      // double-tap zoom-state check in onDown) — assigning
       // `viewTransform = {...to}` here silently corrupted panX/panY to
       // undefined on every completed zoom/unzoom, breaking any redraw that
       // happened afterward without going through another animateTransform
