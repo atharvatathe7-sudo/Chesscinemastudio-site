@@ -2877,8 +2877,11 @@ function exportLastMoveAsWebM(moveRec, opts={fps:EXPORT_FPS}){
     const chunks = [];
     recorder.ondataavailable = e => { if(e.data && e.data.size) chunks.push(e.data); };
     recorder.onstop = () => {
+      // An aborted export never downloads a partial file, and must not touch
+      // the lock: abortExport already released it, and a NEW export may hold
+      // it by the time this (asynchronous) stop event arrives.
+      if(aborted) return;
       try {
-        if(aborted) return; // a failed export never downloads a partial file
         const blob = new Blob(chunks, {type: mime});
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
