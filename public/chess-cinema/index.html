@@ -2224,7 +2224,9 @@ document.getElementById('loadSample').addEventListener('click', ()=>{
   }
   if(importPgn(SAMPLE_PGN) && viewTransform.scale > 1.01) unzoomSmooth();
 });
-document.getElementById('flip').addEventListener('click', ()=>{ boardFlipped = !boardFlipped; drawBoard(); redrawOverlay(); });
+// An export keeps the orientation it started with: its piece paths and camera
+// are fixed at the start, so a flip mid-export would mix orientations in the file.
+document.getElementById('flip').addEventListener('click', ()=>{ if(exportInProgress){ showMessage('Wait for the export to finish.', 'error'); return; } boardFlipped = !boardFlipped; drawBoard(); redrawOverlay(); });
 document.getElementById('captureFx').addEventListener('change', (e)=>{ captureEffect = e.target.value; updateSequenceControls(); });
 // Play/Export operate on the ACTIVE record — the selected timeline move if
 // one is selected, else the latest move (getActiveRecord()'s default) —
