@@ -2398,6 +2398,14 @@ function stopSequence(){
   showSequencePosition(run.landed || run.before || 0);
   updateSequenceControls();
 }
+// An error anywhere in a playing sequence stops it cleanly (nothing is left
+// "playing"), and says so.
+function guardPlayback(fn){
+  return function(){
+    try { return fn.apply(this, arguments); }
+    catch(e){ console.error('Sequence playback failed:', e); stopSequence(); showMessage('Sequence playback stopped: something went wrong.', 'error'); }
+  };
+}
 function playSequence(){
   if(sequencePlayback.state !== 'idle') return;
   if(exportInProgress){ showMessage('Wait for the export to finish.', 'error'); return; }
@@ -2407,18 +2415,21 @@ function playSequence(){
   const plan = sequencePlan(r.records, EXPORT_FPS, captureEffect);
   const run = { plan, records: r.records, raf: null, landed: 0, before: selectedPly };
   sequencePlayback.state = 'playing'; sequencePlayback.run = run;
-  // The position before the first ply.
-  const first = r.records[0];
-  selectedPly = first.ply > 1 ? first.ply - 1 : null;
-  previewBoard = first.preSnapshot;
-  drawBoard();
-  if(selectedPly){ updateStatus(); redrawOverlay(); }
-  else {
-    octx.clearRect(0,0,LOGICAL_SIZE,LOGICAL_SIZE);
-    statusBar.textContent = first.color === 'w' ? "White's Turn" : "Black's Turn";
-    statusBar.style.color = 'white';
-  }
-  updateHistory();
+  // Show the position before the first ply.
+  guardPlayback(function(){
+    const first = r.records[0];
+    selectedPly = first.ply > 1 ? first.ply - 1 : null;
+    previewBoard = first.preSnapshot;
+    drawBoard();
+    if(selectedPly){ updateStatus(); redrawOverlay(); }
+    else {
+      octx.clearRect(0,0,LOGICAL_SIZE,LOGICAL_SIZE);
+      statusBar.textContent = first.color === 'w' ? "White's Turn" : "Black's Turn";
+      statusBar.style.color = 'white';
+    }
+    updateHistory();
+  })();
+  if(sequencePlayback.run !== run) return;   // stopped by an error above
   let t0 = null;
   // Runs `fn(frameTime)` on the first display frame at or after `at` — this
   // frame if `now` already is — so a move's first frame is drawn on the same
@@ -2431,26 +2442,26 @@ function playSequence(){
       if(t >= at) fn(t); else run.raf = requestAnimationFrame(wait);
     });
   }
-  function step(k, frameNow){
+  const step = guardPlayback(function(k, frameNow){
     if(sequencePlayback.run !== run) return;
     const rec = run.records[k];
     selectedPly = rec.ply;
     previewBoard = vacatedSnapshot(rec);
     updateStatus(); updateHistory();
-    animateRecord(rec, () => {
+    animateRecord(rec, guardPlayback(() => {
       if(sequencePlayback.run !== run) return;
       run.landed = rec.ply;
       previewBoard = boardAfterPly(rec.ply);
       updateStatus(); drawBoard(); redrawOverlay(); updateHistory();
-    }, t0 + plan.moves[k].start / plan.fps, (now) => {
+    }), t0 + plan.moves[k].start / plan.fps, guardPlayback((now) => {
       // Settled (capture beat over): the next move starts on the first frame
       // at or after its scheduled time — this one, if that time has passed.
       if(sequencePlayback.run !== run) return;
       const last = k + 1 >= run.records.length;
       const nextAt = t0 + (last ? plan.moves[k].end : plan.moves[k + 1].start) / plan.fps;
-      onFrameAt(nextAt, now, last ? () => finishSequence(run) : (t) => step(k + 1, t));
-    }, frameNow);
-  }
+      onFrameAt(nextAt, now, last ? guardPlayback(() => finishSequence(run)) : (t) => step(k + 1, t));
+    }), frameNow);
+  });
   // The frame that shows the starting position is t = 0 of the timeline.
   run.raf = requestAnimationFrame((now) => { run.raf = null; if(sequencePlayback.run !== run) return; t0 = now; step(0, now); });
 }
@@ -2664,7 +2675,10 @@ function setExportBusy(busy, buttonId){
   }
   const cancel = document.getElementById('cancelExport');
   if(cancel) cancel.disabled = !busy;
-  updateSequenceControls();
+  // A UI refresh must never break the lock: an error escaping here (the lock
+  // is already taken, the export's own error handling not yet entered) would
+  // leave every later export refused until the page is reloaded.
+  try { updateSequenceControls(); } catch(e){ console.error('Sequence controls refresh failed:', e); }
 }
 function setExportProgress(fraction){
   const btn = document.getElementById(exportBusyButton);
