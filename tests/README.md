@@ -59,6 +59,7 @@ export takes its MediaRecorder fallback path.
 | `memory` | `memory_test.js` | Long exports up to the 8,400-frame limit: validity, memory growth | 2B |
 | `pacing` | `pacing_test.js` | Post-move viewing intervals (450 / 700 / 700 / 5000 ms, last move ≥ 1000 ms) | 2C |
 | `flip_guard_*` | `flip_guard_test.js` | Flip is refused while an export runs; one orientation in every frame | flip guard |
+| `camera_transitions` | `camera_transition_test.js` | Export camera between moves vs the Phase 2C reference: eased windows (where, how long, bounded, eased), crops and pixels unchanged elsewhere, pieces and timing unchanged, both orientations | 3A |
 | `hash_vs_baseline` | `hash_compare.js` | The 12 single-move exports, frame-hash-identical to the accepted baseline build | — |
 
 Shared helpers: `lib.js` (page setup, chess.js truth), `p2b_lib.js` (independent timeline model and

@@ -62,6 +62,8 @@ EXPORT_MODE=fallback r seq_cleanup_fallback node "$H/sequence_cleanup_test.js" "
 r memory                node "$H/memory_test.js" "$HTML" "$LABEL" "${MEMORY_SIZES:-1,5,10,20,100,429}"
 # Phase 2C: pacing
 r pacing                node "$H/pacing_test.js" "$HTML"
+# Export camera between moves (Phase 3A), against the Phase 2C reference
+r camera_transitions    node "$H/camera_transition_test.js" "$HTML"
 # Board flip during export (added with the flip guard)
 r flip_guard_webcodecs  node "$H/flip_guard_test.js" "$HTML"
 EXPORT_MODE=fallback r flip_guard_fallback node "$H/flip_guard_test.js" "$HTML"
