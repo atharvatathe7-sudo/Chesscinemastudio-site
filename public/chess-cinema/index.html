@@ -2708,25 +2708,48 @@ function exportHoldFrames(rec, fps){
            total: HOLD_FRAMES + (story ? STORY_EASE_FRAMES + STORY_HOLD_FRAMES : 0) };
 }
 
-/* ---------------- SEQUENCE TIMELINE (Phase 2B) ----------------
+/* ---------------- SEQUENCE TIMELINE (Phase 2B, pacing Phase 2C) ----------------
    ONE timeline for a run of consecutive plies, used by sequence playback on
    screen AND by the export, so both show the same moves for the same time.
    It is built once, up front, in integer units of (ms x fps): frame n sits
    exactly at n*1000, so boundaries never accumulate rounding.
      move k   movement [start_k, land_k)   land_k = start_k + T_k*fps
                                            (T_k = computeMoveDuration, Phase 2A)
-              hold     [land_k, end_k)     end_k  = land_k + hold_k*1000
+              hold     [land_k, end_k)     the position after move k is shown
      move k+1 starts at end_k, i.e. exactly when move k's hold ends.
-   hold_k, in frames, is explicit — no other pause exists:
-     - the LAST move: the full hold (1 s, + the Story Target beat), then one
-       closing frame. So a one-move sequence is exactly the single-move export.
-     - a move the creator marked (Story Targets, arrows, highlights or a
-       classification badge): the same full hold, so what was marked is seen.
-     - otherwise, a capture while Capture FX is on: the effect's beat (0.5 s).
-     - otherwise 0: the next move starts the moment this one lands.
    A frame shows the timeline at its own time, so a landing that falls between
-   frames is first shown on the next frame — which, with no hold, is already
-   the next move's first frame (its board is the landed position). */
+   frames is first shown on the next frame.
+
+   POST-MOVE VIEWING INTERVAL (Phase 2C). The hold is time to SEE the new
+   position; movement time is unchanged. The values are provisional (to be
+   tuned by eye). One interval per move, by class, in precedence order:
+     checkmate  5000 ms   (the move's SAN ends in '#': chess.js marks mate so)
+     check       700 ms   (record.checkSquare: chess.js in_check() after it)
+     capture     700 ms   (record.captured; includes en passant)
+     ordinary    450 ms
+   The last move of the range gets at least 1000 ms (its final position).
+   Then hold_k = the LONGEST of the applicable intervals — never their sum:
+     - the viewing interval above;
+     - a marked move's (Story Targets, arrows, highlights, classification
+       badge) and the last move's existing camera hold: 1 s, + the Story
+       Target beat, in frames — so marked moves keep their full framing;
+     - with Capture FX on, a capture's effect beat (0.5 s), so a move never
+       starts during an effect. The effect plays from the landing, inside the
+       viewing interval (700 ms > 500 ms: the rest shows the still position).
+   The last move is followed by one closing frame, so a one-move sequence is
+   the single-move export: unchanged except that a mating move now holds its
+   final position for 5 s. */
+const PACE_ORDINARY_MS = 450, PACE_CAPTURE_MS = 700, PACE_CHECK_MS = 700, PACE_MATE_MS = 5000, PACE_FINAL_MS = 1000;
+function moveClass(rec){
+  if(rec.san && /#$/.test(rec.san)) return 'checkmate';
+  if(rec.checkSquare) return 'check';
+  if(rec.captured) return 'capture';
+  return 'ordinary';
+}
+function viewingIntervalMs(rec, last){
+  const ms = { checkmate: PACE_MATE_MS, check: PACE_CHECK_MS, capture: PACE_CAPTURE_MS, ordinary: PACE_ORDINARY_MS }[moveClass(rec)];
+  return last ? Math.max(ms, PACE_FINAL_MS) : ms;
+}
 function sequencePlan(records, fps, fxKind){
   const moves = [];
   let cursor = 0;
@@ -2737,9 +2760,12 @@ function sequencePlan(records, fps, fxKind){
     const marked = !!((rec.storyTargets && rec.storyTargets.length) || (rec.arrows && rec.arrows.length) ||
                       (rec.highlights && rec.highlights.length) || rec.badge);
     const fullHold = last || marked;
-    const holdFrames = fullHold ? hf.total : ((captureVictim(rec) && fxKind !== 'off') ? hf.FX_FRAMES : 0);
-    const start = cursor, land = start + T * fps, end = land + holdFrames * 1000;
-    moves.push({ rec, T, holdFrames, fullHold, start, land, end, landFrame: Math.ceil(land / 1000) });
+    const viewMs = viewingIntervalMs(rec, last);
+    const hold = Math.max(viewMs * fps,                                                       // ms x fps
+                          fullHold ? hf.total * 1000 : 0,                                     // frames x 1000
+                          (captureVictim(rec) && fxKind !== 'off') ? hf.FX_FRAMES * 1000 : 0);
+    const start = cursor, land = start + T * fps, end = land + hold;
+    moves.push({ rec, T, cls: moveClass(rec), viewMs, holdMs: hold / fps, fullHold, start, land, end, landFrame: Math.ceil(land / 1000) });
     cursor = end;
   });
   const totalFrames = Math.ceil(cursor / 1000) + 1;   // + the closing frame
