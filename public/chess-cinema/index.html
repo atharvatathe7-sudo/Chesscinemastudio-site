@@ -2798,27 +2798,58 @@ function planFrame(plan, n){
        ends are the existing framings.
    CAMERA_TRANSITION_MS (300 ms: 8 in-between frames at 30 fps), shorter when
    the still view is short; below CAMERA_TRANSITION_MIN_FRAMES the cut is kept.
+   Two cases differ:
+     - Zooming in from the full board (an unmarked move) to a move with Story
+       Targets: the earlier move keeps the full board for its whole hold, the
+       marked piece moves on the full board, and only once it has landed does
+       the camera ease into that move's own camera, over CAMERA_ZOOM_IN_MS. This
+       is the start of its hold (a Story Target move's hold is at least 74
+       frames; its Story beat begins 30 frames in).
+     - A marked checkmate ending the export: its close-up is held for
+       MATE_CLOSEUP_MS once settled, then the camera eases back to the full
+       board over CAMERA_TRANSITION_MS and stays there to the last frame, all
+       inside the mate's existing hold.
    `clips` are the export's buildMoveClip()s for plan.moves. Returns the crops
    that replace a move's own, by frame. */
-const CAMERA_TRANSITION_MS = 300, CAMERA_TRANSITION_MIN_FRAMES = 3;
+const CAMERA_TRANSITION_MS = 300, CAMERA_TRANSITION_MIN_FRAMES = 3, CAMERA_ZOOM_IN_MS = 500, MATE_CLOSEUP_MS = 1000;
 function cameraTransitions(plan, clips){
   const crops = new Map();
   const cropOf = (n) => { const f = planFrame(plan, n); return clips[f.k].cropAt(f.t, f.holdIndex, plan.moves[f.k].fullHold); };
   const same = (a, b) => a.sx === b.sx && a.sy === b.sy && a.box === b.box;
-  const maxFrames = Math.round(CAMERA_TRANSITION_MS * plan.fps / 1000) - 1;
+  const lerpCrop = (a, b, e) => ({ sx: a.sx + (b.sx - a.sx) * e, sy: a.sy + (b.sy - a.sy) * e, box: a.box + (b.box - a.box) * e });
+  const FULL = { sx: 0, sy: 0, box: LOGICAL_SIZE };
+  const frames = (ms) => Math.round(ms * plan.fps / 1000);
+  const last = plan.moves.length - 1;
+  const maxFrames = frames(CAMERA_TRANSITION_MS) - 1;
   for(let k = 0; k + 1 < plan.moves.length; k++){
     const next = Math.ceil(plan.moves[k].end / 1000);   // the next move's first frame
     const from = cropOf(next - 1), to = cropOf(next);
     if(same(from, to)) continue;
+    const nx = plan.moves[k + 1], nxEnd = k + 1 < last ? Math.ceil(nx.end / 1000) : plan.totalFrames;
+    const zoom = frames(CAMERA_ZOOM_IN_MS);
+    if(!plan.moves[k].fullHold && nx.rec.storyTargets.length && same(from, FULL) && nx.landFrame + zoom < nxEnd){
+      for(let n = next; n <= nx.landFrame; n++) crops.set(n, FULL);
+      for(let h = 1; h < zoom; h++) crops.set(nx.landFrame + h, lerpCrop(FULL, cropOf(nx.landFrame + h), easeInOutCubic(h / zoom)));
+      continue;
+    }
     // Hold frames after the landing frame on which this move's camera is
     // already at rest on `from`.
     let still = 0;
     for(let n = next - 1; n > plan.moves[k].landFrame && same(cropOf(n), from); n--) still++;
-    const frames = Math.min(maxFrames, Math.floor(still / 2));
-    if(frames < CAMERA_TRANSITION_MIN_FRAMES) continue;
-    for(let j = 1; j <= frames; j++){
-      const e = easeInOutCubic(j / (frames + 1));
-      crops.set(next - 1 - frames + j, { sx: from.sx + (to.sx - from.sx) * e, sy: from.sy + (to.sy - from.sy) * e, box: from.box + (to.box - from.box) * e });
+    const count = Math.min(maxFrames, Math.floor(still / 2));
+    if(count < CAMERA_TRANSITION_MIN_FRAMES) continue;
+    for(let j = 1; j <= count; j++) crops.set(next - 1 - count + j, lerpCrop(from, to, easeInOutCubic(j / (count + 1))));
+  }
+  // A marked checkmate: its own camera ends on a close-up (an unmarked one is
+  // the full board throughout and is left alone).
+  const end = plan.totalFrames - 1, fin = cropOf(end);
+  if(moveClass(plan.moves[last].rec) === 'checkmate' && !same(fin, FULL)){
+    let settled = end;
+    while(settled - 1 >= plan.moves[last].landFrame && same(cropOf(settled - 1), fin)) settled--;
+    const out = frames(CAMERA_TRANSITION_MS), fullFrom = settled + frames(MATE_CLOSEUP_MS) + out - 1;
+    if(fullFrom <= end){
+      for(let j = 1; j < out; j++) crops.set(fullFrom - out + j, lerpCrop(fin, FULL, easeInOutCubic(j / out)));
+      for(let n = fullFrom; n <= end; n++) crops.set(n, FULL);
     }
   }
   return crops;
