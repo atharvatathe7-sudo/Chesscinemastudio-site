@@ -2421,6 +2421,18 @@ function setExportBusy(busy){
 function exportLastMoveAsWebM(moveRec, opts={fps:EXPORT_FPS}){
   if(exportInProgress) return;
   setExportBusy(true);
+  // Per-call recording state, declared before the try so the outer catch can
+  // clean up whatever the failed setup had already started. `aborted` lives
+  // here (not next to abortExport) so a stop event arriving after an early
+  // failure never reads it before it is initialised.
+  let exportStream = null, exportRecorder = null, aborted = false;
+  // Stop the recorder and release the canvas capture tracks. Idempotent, and
+  // it only ever touches THIS call's recorder/stream, so a delayed event from
+  // an older export cannot affect a newer one.
+  function releaseRecording(){
+    try { if(exportRecorder && exportRecorder.state !== 'inactive') exportRecorder.stop(); } catch(e){}
+    try { if(exportStream) exportStream.getTracks().forEach(t => t.stop()); } catch(e){}
+  }
   try {
     const fps = opts.fps || EXPORT_FPS;
 
@@ -2849,6 +2861,7 @@ function exportLastMoveAsWebM(moveRec, opts={fps:EXPORT_FPS}){
       }
     } catch(e){ /* fall through to auto-rate capture below */ }
     if(!stream){ stream = exportCanvas.captureStream(fps); }
+    exportStream = stream;
 
     // prepare MediaRecorder with alpha if supported. An explicit
     // videoBitsPerSecond is required here — without it Chrome's own default
@@ -2870,10 +2883,12 @@ function exportLastMoveAsWebM(moveRec, opts={fps:EXPORT_FPS}){
         recorder = new MediaRecorder(stream, {mimeType: mime, videoBitsPerSecond: EXPORT_BITRATE});
       } catch (e2) {
         showMessage("Video recording is not supported on this browser.", "error");
+        releaseRecording();
         setExportBusy(false);
         return;
       }
     }
+    exportRecorder = recorder;
     const chunks = [];
     recorder.ondataavailable = e => { if(e.data && e.data.size) chunks.push(e.data); };
     recorder.onstop = () => {
@@ -3005,12 +3020,11 @@ function exportLastMoveAsWebM(moveRec, opts={fps:EXPORT_FPS}){
     // lock) stuck forever. Each frame runs guarded; a failure aborts cleanly:
     // the recorder is stopped, no partial file is downloaded, the lock is
     // released. Frame content is untouched — frameStep itself is unchanged.
-    let aborted = false;
     function abortExport(err){
       if(aborted) return;
       aborted = true; finished = true;
       console.error("Export failed:", err);
-      try { if(recorder.state !== 'inactive') recorder.stop(); } catch(e){}
+      releaseRecording();
       setExportBusy(false);
       showMessage("Export failed! See console for error.", "error");
     }
@@ -3167,6 +3181,10 @@ function exportLastMoveAsWebM(moveRec, opts={fps:EXPORT_FPS}){
     requestAnimationFrame(guardedFrameStep);
   } catch (err) {
     console.error("Export failed:", err);
+    // A setup failure can land after recorder.start(): stop the recorder and
+    // release its tracks, and make its (asynchronous) stop event download nothing.
+    aborted = true;
+    releaseRecording();
     showMessage("Export failed! See console for error.", "error");
     setExportBusy(false);
   }
