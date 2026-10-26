@@ -2785,6 +2785,45 @@ function planFrame(plan, n){
   return { k, t: 1, holdIndex: n - m.landFrame };
 }
 
+/* ---------------- CAMERA BETWEEN MOVES (Phase 3A, export only) ----------------
+   Each move frames itself (buildMoveClip), so where two consecutive moves frame
+   differently (into, out of, or between marked moves) the export cut to the
+   next move's framing on its first frame. Instead the camera now eases from
+   one framing to the other over the LAST frames of the earlier move's hold:
+     - only once that move has landed and its camera is at rest, and at least
+       half of that still view is kept;
+     - it reaches the next move's own framing exactly on that move's first
+       frame, so it never overlaps the next piece's movement;
+     - only the crop changes: no frame is added, nothing is retimed, and both
+       ends are the existing framings.
+   CAMERA_TRANSITION_MS (300 ms: 8 in-between frames at 30 fps), shorter when
+   the still view is short; below CAMERA_TRANSITION_MIN_FRAMES the cut is kept.
+   `clips` are the export's buildMoveClip()s for plan.moves. Returns the crops
+   that replace a move's own, by frame. */
+const CAMERA_TRANSITION_MS = 300, CAMERA_TRANSITION_MIN_FRAMES = 3;
+function cameraTransitions(plan, clips){
+  const crops = new Map();
+  const cropOf = (n) => { const f = planFrame(plan, n); return clips[f.k].cropAt(f.t, f.holdIndex, plan.moves[f.k].fullHold); };
+  const same = (a, b) => a.sx === b.sx && a.sy === b.sy && a.box === b.box;
+  const maxFrames = Math.round(CAMERA_TRANSITION_MS * plan.fps / 1000) - 1;
+  for(let k = 0; k + 1 < plan.moves.length; k++){
+    const next = Math.ceil(plan.moves[k].end / 1000);   // the next move's first frame
+    const from = cropOf(next - 1), to = cropOf(next);
+    if(same(from, to)) continue;
+    // Hold frames after the landing frame on which this move's camera is
+    // already at rest on `from`.
+    let still = 0;
+    for(let n = next - 1; n > plan.moves[k].landFrame && same(cropOf(n), from); n--) still++;
+    const frames = Math.min(maxFrames, Math.floor(still / 2));
+    if(frames < CAMERA_TRANSITION_MIN_FRAMES) continue;
+    for(let j = 1; j <= frames; j++){
+      const e = easeInOutCubic(j / (frames + 1));
+      crops.set(next - 1 - frames + j, { sx: from.sx + (to.sx - from.sx) * e, sy: from.sy + (to.sy - from.sy) * e, box: from.box + (to.box - from.box) * e });
+    }
+  }
+  return crops;
+}
+
 /* Minimal WebM (Matroska) writer for one VP9 video track, optionally with an
    alpha channel carried the standard WebM way: AlphaMode=1 on the track and,
    per frame, the alpha plane as a second VP9 frame in BlockAdditional
@@ -3406,8 +3445,9 @@ function exportMovesAsWebM(records, opts={fps:EXPORT_FPS}){
       // movement progress t (holdIndex -1), or holdIndex >= 0 frames after its
       // landing frame. `reframe`: walk the camera stages during the hold (a
       // full hold); otherwise stay on the movement's end framing (a sequence's
-      // capture-effect beat). Nothing here reads a clock.
-      function renderAt(tIn, holdIndex, reframe){
+      // capture-effect beat). `crop`, when given, replaces this move's own
+      // camera for this frame. Nothing here reads a clock.
+      function renderAt(tIn, holdIndex, reframe, crop){
         // -------------------------------------------------
         // --- START RENDER LOOP (with Context) ---
         // -------------------------------------------------
@@ -3475,34 +3515,10 @@ function exportMovesAsWebM(records, opts={fps:EXPORT_FPS}){
         // --- END RENDER LOOP ---
         // -------------------------------------------------
 
-        // 4. Advance the camera. NOT pinned to the piece: a piece held at the
-        //    exact centre of every frame reads as motionless while the board
-        //    slides past it, which is what made the movement (the knight's arc
-        //    especially) look like it wasn't happening. When the whole
-        //    trajectory fits the frame the camera simply doesn't move and the
-        //    piece travels across a static shot. Otherwise it tracks with a
-        //    dead zone, so it only gives ground once the piece nears the edge
-        //    and the piece still moves relative to the frame.
-        // The camera advances on the SAME eased progress the piece uses, so
-        // the two never disagree — but over a shorter distance, which is what
-        // makes the piece visibly travel across the frame.
-        const prog = state.e;
-        const camX = camX0 + (camX1 - camX0) * prog;
-        const camY = camY0 + (camY1 - camY0) * prog;
-
-        // While the piece is travelling the camera is the movement camera. Once
-        // landed, walk the camera stages (impact, then the consequence beat when
-        // the creator marked Story Targets). Each stage eases in and is then
-        // HELD still, so a framing never arrives just as the recorder stops.
-        const framing = (landed && reframe)
-          ? framingAtHold(holdIndex, boxSize, camX, camY)
-          : { box: boxSize, camX, camY };
-        const frameBox = framing.box, frameCamX = framing.camX, frameCamY = framing.camY;
-
-        // Compute crop (ensure crop fits inside board)
-        const half = frameBox / 2;
-        let sx = Math.max(0, Math.min(LOGICAL_SIZE - frameBox, frameCamX - half));
-        let sy = Math.max(0, Math.min(LOGICAL_SIZE - frameBox, frameCamY - half));
+        // 4. The camera: this move's own crop at this point (cropAt), unless
+        //    the sequence passes one in (a transition between two moves'
+        //    framings — see cameraTransitions()).
+        const { sx, sy, box: frameBox } = crop || cropAt(tIn, holdIndex, reframe);
 
         // 5. Draw cropped region from temp (transparent) canvas to final
         //    (export) canvas. sx/sy/boxSize are in the 0..LOGICAL_SIZE
@@ -3519,7 +3535,42 @@ function exportMovesAsWebM(records, opts={fps:EXPORT_FPS}){
         );
       }
 
-      return { renderAt };
+      // The crop this move's camera shows at a point of its timeline (same
+      // arguments as renderAt), in logical px, inside the board.
+      function cropAt(tIn, holdIndex, reframe){
+        const landed = holdIndex >= 0;
+        // NOT pinned to the piece: a piece held at the exact centre of every
+        // frame reads as motionless while the board slides past it, which is
+        // what made the movement (the knight's arc especially) look like it
+        // wasn't happening. When the whole trajectory fits the frame the
+        // camera simply doesn't move and the piece travels across a static
+        // shot. Otherwise it tracks with a dead zone, so it only gives ground
+        // once the piece nears the edge and the piece still moves relative to
+        // the frame.
+        // The camera advances on the SAME eased progress the piece uses, so
+        // the two never disagree — but over a shorter distance, which is what
+        // makes the piece visibly travel across the frame.
+        const prog = landed ? 1 : pieceTrajectory(travelType, startCenter, endCenter, Math.min(1, tIn)).e;
+        const camX = camX0 + (camX1 - camX0) * prog;
+        const camY = camY0 + (camY1 - camY0) * prog;
+
+        // While the piece is travelling the camera is the movement camera. Once
+        // landed, walk the camera stages (impact, then the consequence beat when
+        // the creator marked Story Targets). Each stage eases in and is then
+        // HELD still, so a framing never arrives just as the recorder stops.
+        const framing = (landed && reframe)
+          ? framingAtHold(holdIndex, boxSize, camX, camY)
+          : { box: boxSize, camX, camY };
+        const frameBox = framing.box, frameCamX = framing.camX, frameCamY = framing.camY;
+
+        // Compute crop (ensure crop fits inside board)
+        const half = frameBox / 2;
+        const sx = Math.max(0, Math.min(LOGICAL_SIZE - frameBox, frameCamX - half));
+        const sy = Math.max(0, Math.min(LOGICAL_SIZE - frameBox, frameCamY - half));
+        return { sx, sy, box: frameBox };
+      }
+
+      return { renderAt, cropAt };
     }
 
     // ---------------- FRAME SCHEDULE: ENDPOINT RULE ----------------
@@ -3537,10 +3588,11 @@ function exportMovesAsWebM(records, opts={fps:EXPORT_FPS}){
     // For one move: ceil(T*fps/1000) movement frames + the hold + 1, exactly
     // as before. The file is TOTAL_FRAMES*1000/fps ms long on any machine.
     const clips = records.map(rec => buildMoveClip(rec));
+    const transitions = cameraTransitions(plan, clips);
     const TOTAL_FRAMES = plan.totalFrames;
     function renderFrame(n){
       const f = planFrame(plan, n);
-      clips[f.k].renderAt(f.t, f.holdIndex, plan.moves[f.k].fullHold);
+      clips[f.k].renderAt(f.t, f.holdIndex, plan.moves[f.k].fullHold, transitions.get(n));
     }
 
     // A failure anywhere after encoding/recording started aborts cleanly: the
