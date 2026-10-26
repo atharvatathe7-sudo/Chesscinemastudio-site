@@ -374,7 +374,6 @@ button:active, button.active {
 /* ---------------- CONFIG ---------------- */
 const LOGICAL_SIZE = 600;
 const PIECE_SCALE = 1.08;      // (from Chess_l.html)
-const ANIM_DURATION_MS = 1500; // (from Chess_l.html)
 const EXPORT_FPS = 30;         // (from Chess_l.html)
 const EXPORT_SIZE = 1080;      // 1080-class square export (was 720 — too low for a YouTube-bound source clip)
 // The export's working canvas is rendered at LOGICAL_SIZE * EXPORT_RENDER_SCALE
@@ -764,7 +763,7 @@ function drawHighlightAt(ctxTarget, x, y, size, color){
 // selection/legal-move dots) is unaffected. Defaults to true so every
 // existing call site (selecting a move, adding/clearing an annotation,
 // undo/redo, flip, etc.) keeps showing annotations exactly as before; the
-// ONLY caller that ever passes false is animPiece()'s own per-frame loop,
+// ONLY caller that ever passes false is animPieces()'s own per-frame loop,
 // while its local `t` is still short of the piece's landing.
 function redrawOverlay(landed = true){
   octx.clearRect(0,0,LOGICAL_SIZE,LOGICAL_SIZE);
@@ -952,6 +951,9 @@ function squareCenter(sq){ const c = squareToCoords(sq); const s = LOGICAL_SIZE/
    boardFlipped) and camera-safe (the export applies its crop afterwards,
    and the camera box is never computed from anything here). */
 const CAPTURE_FX_FRAMES = 15;   // ~0.5s at EXPORT_FPS, always carved out of the existing hold
+// The same beat as a duration, for the live preview: it runs on time (not on
+// display frames), so it lasts as long as in the export on any refresh rate.
+const CAPTURE_FX_MS = CAPTURE_FX_FRAMES * 1000 / EXPORT_FPS;
 let captureEffect = 'dissolve'; // set by the Capture FX control; 'off' disables entirely
 
 // Deterministic [0,1) from integer inputs — integer ops only, so it is
@@ -1713,15 +1715,12 @@ function showPromotionModal(color, callback){
 
 
 /* ---------------- ON-SCREEN ANIMATION (MODIFIED for Pan/Zoom) ---------------- */
-// Animates a single piece from `from` to `to`. Caller supplies the exact
-// type/color to draw (instead of this function guessing it) and is
-// responsible for animHideSquares — that lets animateRecord() below drive
-// two of these in parallel for castling without them fighting over shared
-// hide-state or duration-completion bookkeeping.
-function animateMoveByPiece(from,to,type,color,durationMs,onComplete){
-  const start = squareCenter(from), end = squareCenter(to);
+// One travelling piece for animPieces(). The caller supplies the exact
+// type/color to draw (instead of guessing it) and is responsible for
+// animHideSquares.
+function moverFor(from, to, type, color){
   const img = (pieceImages[color] && pieceImages[color][type]) ? pieceImages[color][type] : null;
-  animPiece(type, start, end, img, durationMs, ()=>{ if(onComplete) onComplete(); });
+  return { type, start: squareCenter(from), end: squareCenter(to), img };
 }
 
 // Canonical entry point for animating a move record (used by both the
@@ -1729,34 +1728,29 @@ function animateMoveByPiece(from,to,type,color,durationMs,onComplete){
 // per-piece-type curves above — for castling it just runs the king's and
 // rook's animations in parallel, using the existing rook curve for the
 // rook, rather than introducing any new animation system.
-// A longer move covers more visual distance in the same wall-clock time,
-// which makes it read as rushed/incomplete even though the code timing is
-// identical to a short move. Scales ANIM_DURATION_MS modestly for moves
-// beyond ~2 squares of travel (capped), so a queen crossing the board gets
-// meaningfully more time to be readable without slowing down the common
-// short-move case at all. Shared by live preview (animateRecord, below)
-// AND export, so both stay on the same timing concept — see
-// exportLastMoveAsWebM(), which calls this too when no explicit duration
-// is supplied.
-function computeMoveDuration(record, baseDuration){
-  baseDuration = baseDuration || ANIM_DURATION_MS;
-  const start = squareCenter(record.from), end = squareCenter(record.to);
-  const travelSquares = Math.hypot(end.x - start.x, end.y - start.y) / (LOGICAL_SIZE/8);
-  // Phase 7: nudged from 120->150ms/square. A full-length rook/queen move
-  // (7 squares) gets 2250ms at the live base, and the longest possible move
-  // on the board (the 9.9-square a1-h8 diagonal) reaches ~2685ms. Short
-  // moves (<=2 squares) are exactly baseDuration.
-  // The cap only exists to stop a pathological distance running away; it is
-  // deliberately above every reachable value at BOTH bases in use, so it
-  // never truncates a real move: at the live base (1500) the longest move is
-  // 2685ms, and at the export base (EXPORT_MOVEMENT_BASE_MS, 2000) it is
-  // 3185ms. Raising it from 2800 therefore changes no live duration at all —
-  // live could never reach 2800 in the first place — and only stops the
-  // export's larger base from being clipped, which would have truncated
-  // exactly the long moves the export most needs to show in full.
-  const BASE_SQUARES = 2, EXTRA_MS_PER_SQUARE = 150, MAX_DURATION_MS = 3400;
-  const scaled = baseDuration + Math.max(0, travelSquares - BASE_SQUARES) * EXTRA_MS_PER_SQUARE;
-  return Math.round(Math.min(MAX_DURATION_MS, Math.max(baseDuration, scaled)));
+// MOVEMENT TIMING (Phase 2A) — the ONE duration model for a move. The live
+// preview (animateRecord) and the export (exportLastMoveAsWebM) both call
+// computeMoveDuration(record), so a move takes the same time whichever way it
+// is shown.
+//   d    = Chebyshev distance in board squares: max(|file change|, |rank change|)
+//   T(d) = min(160 + 20*(d - 1), 280) ms   ->  1 sq 160ms, 2 sq 180ms ... 7 sq 280ms
+// Squares, not pixels: a knight jump is d=2 and a diagonal step d=1, whatever
+// their Euclidean length. Castling is timed by the king's move (d=2) and the
+// rook travels on the same clock. A zero or unreadable distance (never a
+// legal move) safely gets the minimum instead of a negative/NaN duration.
+const MOVE_MS_MIN = 160, MOVE_MS_PER_SQUARE = 20, MOVE_MS_MAX = 280;
+function squareDistance(a, b){
+  const fa = 'abcdefgh'.indexOf(a && a[0]), fb = 'abcdefgh'.indexOf(b && b[0]);
+  const ra = parseInt(a && a[1], 10), rb = parseInt(b && b[1], 10);
+  if(fa < 0 || fb < 0 || !(ra >= 1 && ra <= 8) || !(rb >= 1 && rb <= 8)) return NaN;
+  return Math.max(Math.abs(fa - fb), Math.abs(ra - rb));
+}
+function moveDurationForDistance(d){
+  const squares = Number.isFinite(d) ? Math.max(1, Math.round(d)) : 1;
+  return Math.min(MOVE_MS_MIN + MOVE_MS_PER_SQUARE * (squares - 1), MOVE_MS_MAX);
+}
+function computeMoveDuration(record){
+  return moveDurationForDistance(squareDistance(record && record.from, record && record.to));
 }
 
 // Live-preview counterpart of the export's capture beat: same
@@ -1774,18 +1768,22 @@ function runCaptureEffectPreview(record, victim, toHide, onComplete){
   const secEnd = record.secondary ? squareCenter(record.secondary.to) : null;
   const secImg = record.secondary ? (pieceImages[record.secondary.color] || {})[record.secondary.type] : null;
   if(onComplete) onComplete();
-  let f = 0;
-  function paint(){
+  // Progress is time since landing over CAPTURE_FX_MS — the export's beat is
+  // CAPTURE_FX_FRAMES at EXPORT_FPS, i.e. the same progress at the same time.
+  // (It used to advance one step per displayed frame: 250ms at 60Hz, 125ms
+  // at 120Hz, against 500ms in the export.)
+  const fxStart = performance.now();
+  function paint(now){
+    const p = Math.min(1, Math.max(0, ((now === undefined ? fxStart : now) - fxStart) / CAPTURE_FX_MS));
     drawBoard();
     redrawOverlay();
     octx.save();
-    drawCaptureEffect(octx, captureEffect, victim, f / CAPTURE_FX_FRAMES, seed, dir);
+    drawCaptureEffect(octx, captureEffect, victim, p, seed, dir);
     octx.restore();
     octx.globalAlpha = 1;
     drawMovingImage(landedImg, end.x, end.y, 1, 0, true);
     if(secImg) drawMovingImage(secImg, secEnd.x, secEnd.y, 1, 0, true);
-    f++;
-    if(f <= CAPTURE_FX_FRAMES){ requestAnimationFrame(paint); return; }
+    if(p < 1){ requestAnimationFrame(paint); return; }
     toHide.forEach(sq => animHideSquares.delete(sq));
     octx.clearRect(0,0,LOGICAL_SIZE,LOGICAL_SIZE);
     drawBoard(); redrawOverlay();
@@ -1798,22 +1796,18 @@ function animateRecord(record, onComplete){
   const toHide = record.secondary ? [record.to, record.secondary.to] : [record.to];
   toHide.forEach(sq => animHideSquares.add(sq));
 
-  let pending = record.secondary ? 2 : 1;
+  const victim = captureVictim(record);
   function settle(){
-    pending--;
-    if(pending === 0){
-      // A capture plays its destruction beat here — the same beat the export
-      // spends on the front of its hold. The mover's destination stays in
-      // animHideSquares for its duration so the effect can be drawn UNDER
-      // the arriving piece exactly the way the export layers it.
-      const victim = captureVictim(record);
-      if(victim && captureEffect !== 'off'){
-        runCaptureEffectPreview(record, victim, toHide, onComplete);
-        return;
-      }
-      toHide.forEach(sq => animHideSquares.delete(sq));
-      if(onComplete) onComplete();
+    // A capture plays its destruction beat here — the same beat the export
+    // spends on the front of its hold. The mover's destination stays in
+    // animHideSquares for its duration so the effect can be drawn UNDER
+    // the arriving piece exactly the way the export layers it.
+    if(victim && captureEffect !== 'off'){
+      runCaptureEffectPreview(record, victim, toHide, onComplete);
+      return;
     }
+    toHide.forEach(sq => animHideSquares.delete(sq));
+    if(onComplete) onComplete();
   }
 
   const dur = computeMoveDuration(record);
@@ -1826,10 +1820,12 @@ function animateRecord(record, onComplete){
   // up the file like a pawn instead of ever moving like a knight.
   // For every non-promotion move pieceType === resultPieceType, so nothing
   // else changes.
-  animateMoveByPiece(record.from, record.to, record.pieceType, record.color, dur, settle);
+  // Castling moves the king AND the rook in the same loop, on one clock.
+  const movers = [moverFor(record.from, record.to, record.pieceType, record.color)];
   if(record.secondary){
-    animateMoveByPiece(record.secondary.from, record.secondary.to, record.secondary.type, record.secondary.color, dur, settle);
+    movers.push(moverFor(record.secondary.from, record.secondary.to, record.secondary.type, record.secondary.color));
   }
+  animPieces(movers, dur, victim, settle);
 }
 
 // Preview entry point used by "Play Animation" (Phase 3): safely animates
@@ -1883,35 +1879,47 @@ function easeInOutCubic(t){ return t<0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2,3)/2; }
 
    The curves themselves are unchanged from the live (eased) versions —
    this is a de-duplication, not a re-design of the animation.
+
+   Phase 2A: every pose term now RESTS at both ends (position on the square,
+   angle 0, scale 1), so a piece leaves and arrives exactly as the board draws
+   it — measured before, several did not, and snapped on the landing frame:
+   the hop/scale `bob` was 0.5 (not 0) at t=0 and t=1 (pawn 3px up, x1.02);
+   the knight ended rotated 216deg; queen/bishop/king tilts swept from -A to
+   +A and so ended tilted (queen 31.5deg); the king stopped short (t*0.9);
+   the rook pulsed to x1.08 at t=0.85 (a bounce). Now: bob = sin(pi*e) (same
+   peak, 0 at the ends); each tilt sweep -A..+A becomes -A*sin(2*pi*e) (same
+   lean-back-then-forward and peak, 0 at the ends); the knight turns one full
+   revolution; the king eases all the way; no rook bounce. The x/y paths
+   (lines and arcs) are unchanged.
 */
 function pieceTrajectory(type, start, end, t){
   const s = LOGICAL_SIZE/8;
-  // The king's original curve eases differently (and deliberately stops
-  // slightly short via t*0.9) — preserved exactly.
-  const e = (type === 'k') ? easeInOutCubic(t*0.9) : easeOutCubic(t);
-  const bob = 1 - Math.abs(0.5 - e);
+  // The king keeps its own ease-in-out curve, now run to completion so it
+  // lands on its square (it used to stop short via t*0.9).
+  const e = (type === 'k') ? easeInOutCubic(t) : easeOutCubic(t);
+  const bob = Math.sin(Math.PI * e);          // 0 at rest, 1 mid-flight
+  const sweep = -Math.sin(2 * Math.PI * e);   // lean back, then forward; 0 at rest
   if(type === 'n'){
     const mid = { x: (start.x+end.x)/2, y: (start.y+end.y)/2 - Math.max(s*0.5, Math.hypot(end.x-start.x, end.y-start.y)*0.28) };
     const p = quadBezier(start, mid, end, e);
-    return {x:p.x, y:p.y, angle: Math.PI*(e*1.2), scale: 1 + 0.06*bob, e};
+    return {x:p.x, y:p.y, angle: 2*Math.PI*e, scale: 1 + 0.06*bob, e};
   }
   if(type === 'b'){
     const ctrl = { x: (start.x+end.x)/2 + (end.y-start.y)*0.18, y: (start.y+end.y)/2 + (start.x-end.x)*0.18 };
     const p = quadBezier(start, ctrl, end, e);
-    return {x:p.x, y:p.y, angle: (e-0.5)*0.18, scale: 1, e};
+    return {x:p.x, y:p.y, angle: 0.09*sweep, scale: 1, e};
   }
   if(type === 'r'){
-    const bounce = (t > 0.85) ? (1 + (1 - (t-0.85)/0.15)*0.08) : 1;
-    return {x: start.x + (end.x-start.x)*e, y: start.y + (end.y-start.y)*e, angle: 0, scale: bounce, e};
+    return {x: start.x + (end.x-start.x)*e, y: start.y + (end.y-start.y)*e, angle: 0, scale: 1, e};
   }
   if(type === 'q'){
     const ctrl1 = { x: start.x + (end.x-start.x)*0.33 - (end.y-start.y)*0.12, y: start.y + (end.y-start.y)*0.33 + (end.x-start.x)*0.06 };
     const ctrl2 = { x: start.x + (end.x-start.x)*0.66 + (end.y-start.y)*0.12, y: start.y + (end.y-start.y)*0.66 - (end.x-start.x)*0.06 };
     const p = cubicBezier(start, ctrl1, ctrl2, end, e);
-    return {x:p.x, y:p.y, angle: (e-0.5)*Math.PI*0.35, scale: 1 + 0.07*bob, e};
+    return {x:p.x, y:p.y, angle: Math.PI*0.175*sweep, scale: 1 + 0.07*bob, e};
   }
   if(type === 'k'){
-    return {x: start.x + (end.x-start.x)*e, y: start.y + (end.y-start.y)*e - 4*bob, angle: (e-0.5)*0.08, scale: 1 + 0.03*bob, e};
+    return {x: start.x + (end.x-start.x)*e, y: start.y + (end.y-start.y)*e - 4*bob, angle: 0.04*sweep, scale: 1 + 0.03*bob, e};
   }
   return {x: start.x + (end.x-start.x)*e, y: start.y + (end.y-start.y)*e - 6*bob, angle: 0, scale: 1 + 0.04*bob, e};
 }
@@ -1948,16 +1956,26 @@ function drawLiveDecoration(type, start, end, st, t){
 // the cosmetic flourish (drawLiveDecoration). t0 is anchored to the first
 // real rAF timestamp for the same reason the export does it: a callback
 // delayed past `duration` would otherwise skip the whole animation.
-function animPiece(type,start,end,img,duration,onComplete){
+// All travelling pieces are drawn by ONE loop: castling used to run two
+// loops that each redrew the board and cleared the overlay, so the rook's
+// loop erased the king every frame and only the rook was ever seen moving.
+// A captured piece stays standing until the capture lands (t=1), exactly as
+// the export draws it; it used to vanish as soon as the move started.
+function animPieces(movers, duration, victim, onComplete){
+  const victimImg = victim ? ((pieceImages[victim.color] || {})[victim.type] || null) : null;
+  const victimAt = victim ? squareCenter(victim.sq) : null;
   let t0 = null;
   function frame(now){
     if(t0 === null) t0 = now;
     const t = Math.min(1, (now - t0)/duration);
     drawBoard(); redrawOverlay(t >= 1);
     octx.globalAlpha = 1;
-    const st = pieceTrajectory(type, start, end, t);
-    drawLiveDecoration(type, start, end, st, t);
-    drawMovingImage(img, st.x, st.y, st.scale, st.angle, true);
+    if(t < 1 && victimImg) drawMovingImage(victimImg, victimAt.x, victimAt.y, 1, 0, false);
+    for(const m of movers){
+      const st = pieceTrajectory(m.type, m.start, m.end, t);
+      drawLiveDecoration(m.type, m.start, m.end, st, t);
+      drawMovingImage(m.img, st.x, st.y, st.scale, st.angle, true);
+    }
     if(t < 1) requestAnimationFrame(frame);
     else { octx.clearRect(0,0,LOGICAL_SIZE,LOGICAL_SIZE); if(onComplete) onComplete(); }
   }
@@ -2418,6 +2436,107 @@ function setExportBusy(busy){
   btn.textContent = busy ? 'Exporting…' : 'Export Animation';
 }
 
+/* Minimal WebM (Matroska) writer for one VP9 video track, optionally with an
+   alpha channel carried the standard WebM way: AlphaMode=1 on the track and,
+   per frame, the alpha plane as a second VP9 frame in BlockAdditional
+   (BlockAddID 1) -- the same layout Chrome's MediaRecorder writes.
+
+   frames: [{ data: Uint8Array, key: boolean, alpha?: Uint8Array }]
+   Frame n is presented at round(n*1000/fps) ms: the exact rational time,
+   rounded once per frame (TimestampScale = 1 ms), so there is no cumulative
+   drift. Returns a Blob. */
+function buildWebM({ width, height, fps, frames, withAlpha }){
+  const enc = new TextEncoder();
+  function vintSize(n){ // EBML element size, never the reserved all-ones value
+    let len = 1; while(len < 8 && n >= Math.pow(2, 7*len) - 1) len++;
+    const out = new Uint8Array(len); let v = n;
+    for(let i = len - 1; i >= 0; i--){ out[i] = v % 256; v = Math.floor(v / 256); }
+    out[0] |= (0x80 >> (len - 1));
+    return out;
+  }
+  function idBytes(id){ const b = []; while(id > 0){ b.unshift(id & 0xff); id = Math.floor(id / 256); } return Uint8Array.from(b); }
+  function uintBytes(v, fixed){
+    const b = []; let x = v;
+    do { b.unshift(x % 256); x = Math.floor(x / 256); } while(x > 0);
+    while(fixed && b.length < fixed) b.unshift(0);
+    return Uint8Array.from(b);
+  }
+  function concat(parts){
+    let n = 0; for(const p of parts) n += p.length;
+    const out = new Uint8Array(n); let o = 0;
+    for(const p of parts){ out.set(p, o); o += p.length; }
+    return out;
+  }
+  const el = (id, payload) => concat([idBytes(id), vintSize(payload.length), payload]);
+  const uint = (id, v, fixed) => el(id, uintBytes(v, fixed));
+  const str = (id, s) => el(id, enc.encode(s));
+  const f64 = (id, v) => { const b = new Uint8Array(8); new DataView(b.buffer).setFloat64(0, v); return el(id, b); };
+  function block(relMs, flags, data){
+    const head = new Uint8Array(4);
+    head[0] = 0x81;                                   // track number 1 (vint)
+    new DataView(head.buffer).setInt16(1, relMs);
+    head[3] = flags;
+    return concat([head, data]);
+  }
+
+  const timeMs = (n) => Math.round(n * 1000 / fps);
+  const totalMs = frames.length * 1000 / fps;
+
+  // Clusters: a new cluster at every keyframe (and at least every 30 s).
+  const clusters = []; let cur = null;
+  frames.forEach((f, n) => {
+    const t = timeMs(n);
+    if(!cur || f.key || t - cur.t0 > 30000){ cur = { t0: t, parts: [], key: f.key }; clusters.push(cur); }
+    const rel = t - cur.t0;
+    if(withAlpha){
+      const kids = [el(0xA1, block(rel, 0x00, f.data))];
+      if(f.alpha) kids.push(el(0x75A1, el(0xA6, concat([uint(0xEE, 1), el(0xA5, f.alpha)]))));
+      if(!f.key) kids.push(el(0xFB, Uint8Array.from([0xff & (timeMs(n - 1) - t)]))); // ReferenceBlock: previous frame (relative, negative int8)
+      cur.parts.push(el(0xA0, concat(kids)));
+    } else {
+      cur.parts.push(el(0xA3, block(rel, f.key ? 0x80 : 0x00, f.data)));
+    }
+  });
+  const clusterBytes = clusters.map(c => el(0x1F43B675, concat([uint(0xE7, c.t0)].concat(c.parts))));
+
+  const info = el(0x1549A966, concat([
+    uint(0x2AD7B1, 1000000),                         // TimestampScale: 1 ms
+    f64(0x4489, totalMs),                            // Duration (ms): N frames x frame period
+    str(0x4D80, 'ChessCinemaStudio'), str(0x5741, 'ChessCinemaStudio')
+  ]));
+  const video = el(0xE0, concat([uint(0xB0, width), uint(0xBA, height)].concat(withAlpha ? [uint(0x53C0, 1)] : [])));
+  const tracks = el(0x1654AE6B, el(0xAE, concat([
+    uint(0xD7, 1), uint(0x73C5, 1), uint(0x83, 1), uint(0x9C, 0),
+    str(0x86, 'V_VP9'), uint(0x23E383, Math.round(1e9 / fps)), video
+  ])));
+
+  // Fixed 8-byte positions make every size below independent of the values.
+  const seekEntry = (id, pos) => el(0x4DBB, concat([el(0x53AB, idBytes(id)), uint(0x53AC, pos, 8)]));
+  const seekHeadSize = el(0x114D9B74, concat([seekEntry(0x1549A966, 0), seekEntry(0x1654AE6B, 0), seekEntry(0x1C53BB6B, 0)])).length;
+  const cuesFor = (base) => {
+    let off = base; const pts = [];
+    clusters.forEach((c, i) => {
+      if(c.key) pts.push(el(0xBB, concat([uint(0xB3, c.t0), el(0xB7, concat([uint(0xF7, 1), uint(0xF1, off, 8)]))])));
+      off += clusterBytes[i].length;
+    });
+    return el(0x1C53BB6B, concat(pts));
+  };
+  const cuesSize = cuesFor(0).length;
+  const infoPos = seekHeadSize, tracksPos = infoPos + info.length, cuesPos = tracksPos + tracks.length;
+  const clustersPos = cuesPos + cuesSize;
+  const seekHead = el(0x114D9B74, concat([seekEntry(0x1549A966, infoPos), seekEntry(0x1654AE6B, tracksPos), seekEntry(0x1C53BB6B, cuesPos)]));
+  const cues = cuesFor(clustersPos);
+
+  const header = el(0x1A45DFA3, concat([
+    uint(0x4286, 1), uint(0x42F7, 1), uint(0x42F2, 4), uint(0x42F3, 8),
+    str(0x4282, 'webm'), uint(0x4287, 4), uint(0x4285, 2)
+  ]));
+  const segParts = [seekHead, info, tracks, cues].concat(clusterBytes);
+  let segLen = 0; for(const p of segParts) segLen += p.length;
+  const segHead = concat([idBytes(0x18538067), (() => { const b = new Uint8Array(8); let v = segLen; for(let i = 7; i >= 0; i--){ b[i] = v % 256; v = Math.floor(v / 256); } b[0] |= 0x01; return b; })()]);
+  return new Blob([header, segHead].concat(segParts), { type: 'video/webm' });
+}
+
 function exportLastMoveAsWebM(moveRec, opts={fps:EXPORT_FPS}){
   if(exportInProgress) return;
   setExportBusy(true);
@@ -2425,13 +2544,16 @@ function exportLastMoveAsWebM(moveRec, opts={fps:EXPORT_FPS}){
   // clean up whatever the failed setup had already started. `aborted` lives
   // here (not next to abortExport) so a stop event arriving after an early
   // failure never reads it before it is initialised.
-  let exportStream = null, exportRecorder = null, aborted = false;
-  // Stop the recorder and release the canvas capture tracks. Idempotent, and
-  // it only ever touches THIS call's recorder/stream, so a delayed event from
-  // an older export cannot affect a newer one.
+  let exportStream = null, exportRecorder = null, exportEncoders = [], exportCanvases = [], aborted = false;
+  // Stop the recorder / close the encoders, stop the canvas capture tracks and
+  // free the working canvases. Idempotent, and it only ever touches THIS
+  // call's resources, so a delayed event from an older export cannot affect a
+  // newer one.
   function releaseRecording(){
     try { if(exportRecorder && exportRecorder.state !== 'inactive') exportRecorder.stop(); } catch(e){}
     try { if(exportStream) exportStream.getTracks().forEach(t => t.stop()); } catch(e){}
+    for(const enc of exportEncoders){ try { if(enc.state !== 'closed') enc.close(); } catch(e){} }
+    for(const c of exportCanvases){ c.width = 0; c.height = 0; }
   }
   try {
     const fps = opts.fps || EXPORT_FPS;
@@ -2450,11 +2572,13 @@ function exportLastMoveAsWebM(moveRec, opts={fps:EXPORT_FPS}){
     temp.width = LOGICAL_SIZE * EXPORT_RENDER_SCALE;
     temp.height = LOGICAL_SIZE * EXPORT_RENDER_SCALE;
     const tctx = temp.getContext('2d', {alpha:true});
+    exportCanvases.push(temp);
     tctx.scale(EXPORT_RENDER_SCALE, EXPORT_RENDER_SCALE);
 
     // export canvas square (with alpha)
     const exportCanvas = document.createElement('canvas'); exportCanvas.width = EXPORT_SIZE; exportCanvas.height = EXPORT_SIZE;
     const ectx = exportCanvas.getContext('2d', {alpha:true});
+    exportCanvases.push(exportCanvas);
 
     // prepare snapshot and moving info — moveRec is now the rich per-ply
     // record built by buildMoveRecord() (see MOVE APPLY section), so the
@@ -2528,15 +2652,10 @@ function exportLastMoveAsWebM(moveRec, opts={fps:EXPORT_FPS}){
     //   PHASE D  STOP          frame production and the recorder stop, and
     //                          only here — never on movement time alone
     //
-    // Movement is deliberately unhurried: a truncated-looking move is a far
-    // worse outcome than a slightly long clip, so the export runs on its own
-    // larger base (2000ms floor) rather than the live animation's 1500ms,
-    // still scaled by distance through the same shared computeMoveDuration()
-    // so a long move gets proportionally more time. Live animation timing is
-    // untouched — it keeps calling computeMoveDuration(record) with the
-    // default base.
-    const EXPORT_MOVEMENT_BASE_MS = 2000;
-    const duration = opts.duration || computeMoveDuration(moveRec, EXPORT_MOVEMENT_BASE_MS);
+    // Movement time is the SAME computeMoveDuration(record) the live preview
+    // uses (Phase 2A: 160-280ms by square distance), so a move lasts as long
+    // in the exported clip as it does on screen.
+    const duration = opts.duration || computeMoveDuration(moveRec);
 
     // -------------------------------------------------
     // --- START FINAL FIX (Padding + Context) ---
@@ -2825,104 +2944,6 @@ function exportLastMoveAsWebM(moveRec, opts={fps:EXPORT_FPS}){
       }
     }
 
-    // ---------------- EXPORT TIMING (Phase 4) ----------------
-    // Previously: captureStream(fps) (an internal fixed-rate auto-sampler
-    // that grabs whatever is currently on the canvas on its own clock) fed
-    // by setInterval(fn, intervalMs) with a naive frameIndex++ counter that
-    // assumed every tick landed exactly intervalMs apart. Under any main-
-    // thread jank, setInterval ticks can fire late or get coalesced, which
-    // both (a) desyncs frameIndex-based `t` from real elapsed time and
-    // (b) lets the auto-sampler capture a stale/duplicate frame if a tick
-    // fires late.
-    //
-    // Fix: use captureStream(0) — the standard "manual" capture mode where
-    // NO frame is captured automatically; we push each one explicitly via
-    // CanvasCaptureMediaStreamTrack.requestFrame() the instant it's drawn,
-    // so every captured frame is guaranteed fresh, never stale/duplicated.
-    // Pacing comes from requestAnimationFrame with `t` computed from actual
-    // elapsed wall-clock time (performance.now()) — exactly the same
-    // pattern the live animation curves (animPawn/animRook/etc.) already
-    // use — instead of assuming uniform timer ticks. This is standard,
-    // well-supported Chrome API surface (no invented/manual frame-
-    // injection mechanism); MediaRecorder is still an inherently real-time
-    // recorder, so a ~duration-long export still takes ~duration of wall
-    // time to produce — that's a property of MediaRecorder itself, not
-    // something a different timing mechanism can avoid.
-    //
-    // Feature-detected: if requestFrame() isn't available (very old
-    // Chrome), falls back to the previous fixed-rate auto-sampling so
-    // export still works, just without the stale-frame guarantee.
-    let stream = null, track = null, canRequestFrame = false;
-    try {
-      const probe = exportCanvas.captureStream(0);
-      const probeTrack = probe.getVideoTracks()[0];
-      if(probeTrack && typeof probeTrack.requestFrame === 'function'){
-        stream = probe; track = probeTrack; canRequestFrame = true;
-      }
-    } catch(e){ /* fall through to auto-rate capture below */ }
-    if(!stream){ stream = exportCanvas.captureStream(fps); }
-    exportStream = stream;
-
-    // prepare MediaRecorder with alpha if supported. An explicit
-    // videoBitsPerSecond is required here — without it Chrome's own default
-    // bitrate heuristic for a captureStream() source is conservative and
-    // visibly soft even at 1080p, which was the other half of the reported
-    // "360p/480p-looking" quality problem (resolution alone isn't enough;
-    // a high-res frame encoded at a low bitrate still looks blurry). 12Mbps
-    // is a generous "editing source" target for a ~1080x1080 clip a few
-    // seconds long (a few MB per export) — this is meant to be re-compressed
-    // by the user's editor and then YouTube, not a final delivery file.
-    const EXPORT_BITRATE = 12_000_000;
-    let mime = 'video/webm;codecs=vp9';
-    let recorder;
-    try { recorder = new MediaRecorder(stream, {mimeType: mime, videoBitsPerSecond: EXPORT_BITRATE}); }
-    catch(e){
-      console.warn("VP9 with alpha not supported, falling back.");
-      mime = 'video/webm';
-      try {
-        recorder = new MediaRecorder(stream, {mimeType: mime, videoBitsPerSecond: EXPORT_BITRATE});
-      } catch (e2) {
-        showMessage("Video recording is not supported on this browser.", "error");
-        releaseRecording();
-        setExportBusy(false);
-        return;
-      }
-    }
-    exportRecorder = recorder;
-    const chunks = [];
-    recorder.ondataavailable = e => { if(e.data && e.data.size) chunks.push(e.data); };
-    recorder.onstop = () => {
-      // An aborted export never downloads a partial file, and must not touch
-      // the lock: abortExport already released it, and a NEW export may hold
-      // it by the time this (asynchronous) stop event arrives.
-      if(aborted) return;
-      try {
-        const blob = new Blob(chunks, {type: mime});
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        const fromName = from.replace(/\s+/g,'');
-        const toName = to.replace(/\s+/g,'');
-        a.href = url;
-        a.download = `move_${fromName}_to_${toName}.webm`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(()=>{ URL.revokeObjectURL(url); }, 2000);
-
-        showMessage('Export complete!', 'success');
-      } finally {
-        setExportBusy(false);
-      }
-    };
-
-    // Start recorder
-    recorder.start();
-    showMessage('Recording... Please wait.', 'success', duration + FINAL_HOLD_MS + 500);
-
-    // Produce frames: one rendered+pushed frame per requestAnimationFrame
-    // tick that clears the ~fps pacing gate, so file size/frame rate stay
-    // close to the requested target on high-refresh-rate displays.
-    const minFrameIntervalMs = 1000 / fps;
     // ---------------- DETERMINISTIC FRAME SCHEDULE ----------------
     // The clip is defined as an exact NUMBER OF FRAMES, not as a wall-clock
     // window.
@@ -2944,7 +2965,7 @@ function exportLastMoveAsWebM(moveRec, opts={fps:EXPORT_FPS}){
     // always encodes the same frames in the same order. A stalled or slow
     // browser makes the clip take longer and play back slower; it can no
     // longer make it incomplete.
-    const MOVEMENT_FRAMES = Math.max(2, Math.round((duration / 1000) * fps));
+    const MOVEMENT_FRAMES = Math.max(1, Math.ceil(duration * fps / 1000));   // see ENDPOINT RULE below
     const HOLD_FRAMES     = Math.max(2, Math.round((FINAL_HOLD_MS / 1000) * fps));
     // The captured piece's destruction beat is CARVED OUT of the front of
     // the hold that already exists — it never adds frames. MOVEMENT_FRAMES,
@@ -3011,41 +3032,32 @@ function exportLastMoveAsWebM(moveRec, opts={fps:EXPORT_FPS}){
       return { box, camX: cx, camY: cy };
     }
 
-    let frameIndex = 0;   // 0..MOVEMENT_FRAMES-1 movement, ==MOVEMENT_FRAMES landing, beyond it hold
-    let lastPushedAt = -Infinity;
-    let finished = false;
+    // ---------------- FRAME SCHEDULE: ENDPOINT RULE (Phase 2A) -------------
+    // Frame n is presented at t_n = n*1000/fps ms and shows the clip's
+    // timeline AT t_n. Every phase is sampled on a half-open interval
+    // [start, end), and the clip closes with one frame of its final state:
+    //   movement  frames 0..MOVEMENT_FRAMES-1, i.e. every t_n < duration: the
+    //             piece at pieceTrajectory(t_n / duration), the same function
+    //             of time the live preview draws at elapsed t_n
+    //   hold      holdIndex 0..TOTAL_HOLD_FRAMES-1; holdIndex 0 is the landing
+    //             frame, the first frame with t_n >= duration
+    //   closing   holdIndex TOTAL_HOLD_FRAMES, the settled final framing
+    // So MOVEMENT_FRAMES = ceil(duration*fps/1000) and the clip is exactly
+    // TOTAL_FRAMES frames = TOTAL_FRAMES*1000/fps ms long, on any machine.
+    const TOTAL_FRAMES = MOVEMENT_FRAMES + TOTAL_HOLD_FRAMES + 1;
 
-    // A throw inside a requestAnimationFrame callback escapes the try/catch
-    // around this function, which used to leave the export (and now its busy
-    // lock) stuck forever. Each frame runs guarded; a failure aborts cleanly:
-    // the recorder is stopped, no partial file is downloaded, the lock is
-    // released. Frame content is untouched — frameStep itself is unchanged.
-    function abortExport(err){
-      if(aborted) return;
-      aborted = true; finished = true;
-      console.error("Export failed:", err);
-      releaseRecording();
-      setExportBusy(false);
-      showMessage("Export failed! See console for error.", "error");
-    }
-    function guardedFrameStep(now){ try { frameStep(now); } catch(err){ abortExport(err); } }
-    recorder.onerror = (e) => abortExport(e && e.error ? e.error : e);
-
-    function frameStep(now){
-      if(finished) return;
-      // Pace to ~fps against the wall clock so a healthy machine still
-      // produces a real-time-length clip — but this only ever DELAYS the next
-      // frame, it never skips a schedule step. Frame content is a function of
-      // frameIndex alone.
-      if(now - lastPushedAt < minFrameIntervalMs){ requestAnimationFrame(guardedFrameStep); return; }
-
+    // Renders schedule frame `frameIndex` onto exportCanvas. Its content is a
+    // function of frameIndex alone — nothing here reads a clock.
+    function renderFrame(frameIndex){
       // -------------------------------------------------
       // --- START RENDER LOOP (with Context) ---
       // -------------------------------------------------
 
       // PHASE A while frameIndex<MOVEMENT_FRAMES; PHASE B exactly at
       // MOVEMENT_FRAMES (the landing frame, holdIndex 0); PHASE C after.
-      const t = Math.min(1, frameIndex / MOVEMENT_FRAMES);
+      // Movement is sampled at the frame's own timeline time t_n, so the
+      // piece is where the live preview draws it at the same elapsed time.
+      const t = Math.min(1, (frameIndex * 1000 / fps) / duration);
       const landed = frameIndex >= MOVEMENT_FRAMES;
       const holdIndex = landed ? (frameIndex - MOVEMENT_FRAMES) : -1;
       // Hold progress, counted in FRAMES from the landing frame. The landing
@@ -3147,38 +3159,242 @@ function exportLastMoveAsWebM(moveRec, opts={fps:EXPORT_FPS}){
         sx*EXPORT_RENDER_SCALE, sy*EXPORT_RENDER_SCALE, frameBox*EXPORT_RENDER_SCALE, frameBox*EXPORT_RENDER_SCALE,
         0, 0, EXPORT_SIZE, EXPORT_SIZE
       );
+    }
 
-      // 6. Push exactly this frame into the capture stream. Every frame the
-      //    schedule defines is pushed — there is no throttle decision here
-      //    any more, because the pacing above already decided that this tick
-      //    produces a frame. The schedule advances only on a pushed frame, so
-      //    a frame can never be skipped, including the landing frame.
-      //    (In the auto-rate fallback the browser samples the canvas on its
-      //    own clock; the schedule still advances identically, which is what
-      //    lets the loop terminate in that mode at all — the previous
-      //    termination test counted manually-pushed frames, so with
-      //    requestFrame unavailable it could never be satisfied and the loop
-      //    ran forever without ever stopping the recorder.)
-      if(canRequestFrame) track.requestFrame();
-      lastPushedAt = now;
-      frameIndex++;
+    // A failure anywhere after encoding/recording started aborts cleanly: the
+    // encoders are closed or the recorder stopped, no partial file is
+    // downloaded, the lock is released.
+    let finished = false;
+    function abortExport(err){
+      if(aborted) return;
+      aborted = true; finished = true;
+      console.error("Export failed:", err);
+      releaseRecording();
+      setExportBusy(false);
+      showMessage("Export failed! See console for error.", "error");
+    }
+    function downloadClip(blob){
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const fromName = from.replace(/\s+/g,'');
+      const toName = to.replace(/\s+/g,'');
+      a.href = url;
+      a.download = `move_${fromName}_to_${toName}.webm`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(()=>{ URL.revokeObjectURL(url); }, 2000);
 
-      // PHASE D. Stop only once the landing frame AND every hold frame have
-      // actually been rendered and pushed. Termination is now a pure function
-      // of frames emitted: no elapsed-time test can end the export early, and
-      // no camera or encoder timing participates in the decision.
-      if(holdIndex < TOTAL_HOLD_FRAMES){
-        requestAnimationFrame(guardedFrameStep);
-      } else {
-        finished = true;
-        // Let the last pushed frames reach the encoder before stopping. The
-        // hold deliberately ends on several identical settled frames, so even
-        // if the encoder drops the very last one the settled state is still
-        // present in the file.
-        setTimeout(()=>{ recorder.stop(); }, Math.max(120, minFrameIntervalMs * 3));
+      showMessage('Export complete!', 'success');
+    }
+
+    // Encoder bitrate, for both paths below. An explicit bitrate is required
+    // (MediaRecorder's videoBitsPerSecond) — without it Chrome's own default
+    // bitrate heuristic for a captureStream() source is conservative and
+    // visibly soft even at 1080p, which was the other half of the reported
+    // "360p/480p-looking" quality problem (resolution alone isn't enough;
+    // a high-res frame encoded at a low bitrate still looks blurry). 12Mbps
+    // is a generous "editing source" target for a ~1080x1080 clip a few
+    // seconds long (a few MB per export) — this is meant to be re-compressed
+    // by the user's editor and then YouTube, not a final delivery file.
+    const EXPORT_BITRATE = 12_000_000;
+
+    // ---------------- DETERMINISTIC ENCODING (Phase 2A) ----------------
+    // Preferred path: WebCodecs. Each schedule frame is rendered and handed to
+    // a VP9 VideoEncoder with its exact presentation timestamp (integer
+    // microseconds, round(n*1e6/fps) — computed per frame, so no rounding
+    // accumulates), then written to WebM by buildWebM() at round(n*1000/fps)
+    // ms. Nothing waits on the wall clock or on animation callbacks, so a slow
+    // machine only takes longer to finish: the file has every scheduled frame
+    // at its scheduled time regardless. (MediaRecorder cannot do this: it
+    // stamps frames with their arrival time and drops frames fed faster than
+    // real time.)
+    // Transparency: WebCodecs' encoders cannot keep alpha here (alpha:'keep'
+    // is unsupported), so it is carried the standard WebM way, as MediaRecorder
+    // writes it: a second VP9 stream whose luma plane is the alpha channel,
+    // stored per frame in BlockAdditional, with AlphaMode=1 on the track.
+    async function encodeWithWebCodecs(){
+      const config = { codec: 'vp09.00.40.08', width: EXPORT_SIZE, height: EXPORT_SIZE, bitrate: EXPORT_BITRATE,
+                       bitrateMode: 'variable', framerate: fps, latencyMode: 'quality', alpha: 'discard',
+                       hardwareAcceleration: 'prefer-software' };
+      let support = null;
+      try { support = await VideoEncoder.isConfigSupported(config); } catch(e){ support = null; }
+      if(aborted) return;
+      if(!support || !support.supported){ recordWithMediaRecorder(); return; }
+
+      const colour = [], alpha = [];
+      let encoderError = null;
+      const makeEncoder = (sink) => new VideoEncoder({
+        output: (chunk) => { const data = new Uint8Array(chunk.byteLength); chunk.copyTo(data); sink.push({ data, key: chunk.type === 'key' }); },
+        error: (e) => { encoderError = encoderError || e; }
+      });
+      const encColour = makeEncoder(colour), encAlpha = makeEncoder(alpha);
+      exportEncoders.push(encColour, encAlpha);
+      encColour.configure(config);
+      encAlpha.configure(config);
+      showMessage('Rendering video... Please wait.', 'success', 60000);
+
+      const plane = EXPORT_SIZE * EXPORT_SIZE;
+      const alphaI420 = new Uint8Array(plane * 3 / 2);
+      alphaI420.fill(128, plane);                       // neutral chroma; luma = alpha
+      const KEYFRAME_INTERVAL = 2 * fps;
+      const drain = async (enc) => {                    // bounded encoder queue (memory)
+        while(enc.encodeQueueSize > 2 && !encoderError) await new Promise(r => enc.addEventListener('dequeue', r, { once: true }));
+      };
+      for(let n = 0; n < TOTAL_FRAMES; n++){
+        if(aborted) return;
+        if(encoderError) throw encoderError;
+        renderFrame(n);
+        const timestamp = Math.round(n * 1e6 / fps);
+        const frameDuration = Math.round((n + 1) * 1e6 / fps) - timestamp;
+        const keyFrame = n % KEYFRAME_INTERVAL === 0;
+        let frame = new VideoFrame(exportCanvas, { timestamp, duration: frameDuration, alpha: 'discard' });
+        try { encColour.encode(frame, { keyFrame }); } finally { frame.close(); }
+        const px = ectx.getImageData(0, 0, EXPORT_SIZE, EXPORT_SIZE).data;
+        for(let i = 0; i < plane; i++) alphaI420[i] = px[i*4 + 3];
+        frame = new VideoFrame(alphaI420, { format: 'I420', codedWidth: EXPORT_SIZE, codedHeight: EXPORT_SIZE, timestamp, duration: frameDuration });
+        try { encAlpha.encode(frame, { keyFrame }); } finally { frame.close(); }
+        await drain(encColour);
+        await drain(encAlpha);
+        await new Promise(r => setTimeout(r, 0));       // keep the page responsive
+      }
+      await encColour.flush();
+      await encAlpha.flush();
+      if(aborted) return;
+      if(encoderError) throw encoderError;
+      if(colour.length !== TOTAL_FRAMES || alpha.length !== TOTAL_FRAMES){
+        throw new Error(`encoder returned ${colour.length}/${alpha.length} frames for ${TOTAL_FRAMES}`);
+      }
+      finished = true;
+      releaseRecording();                               // encoders closed, canvases freed
+      // A frame is a seek point only if both of its streams are keyframes.
+      const frames = colour.map((c, i) => ({ data: c.data, key: c.key && alpha[i].key, alpha: alpha[i].data }));
+      try {
+        downloadClip(buildWebM({ width: EXPORT_SIZE, height: EXPORT_SIZE, fps, frames, withAlpha: true }));
+      } finally {
+        setExportBusy(false);
       }
     }
-    requestAnimationFrame(guardedFrameStep);
+
+    // Fallback (no WebCodecs VP9 encoder): the previous real-time
+    // MediaRecorder path. Same frames, but its timing follows the wall clock.
+    function recordWithMediaRecorder(){
+      // ---------------- EXPORT TIMING (Phase 4) ----------------
+      // Previously: captureStream(fps) (an internal fixed-rate auto-sampler
+      // that grabs whatever is currently on the canvas on its own clock) fed
+      // by setInterval(fn, intervalMs) with a naive frameIndex++ counter that
+      // assumed every tick landed exactly intervalMs apart. Under any main-
+      // thread jank, setInterval ticks can fire late or get coalesced, which
+      // both (a) desyncs frameIndex-based `t` from real elapsed time and
+      // (b) lets the auto-sampler capture a stale/duplicate frame if a tick
+      // fires late.
+      //
+      // Fix: use captureStream(0) — the standard "manual" capture mode where
+      // NO frame is captured automatically; we push each one explicitly via
+      // CanvasCaptureMediaStreamTrack.requestFrame() the instant it's drawn,
+      // so every captured frame is guaranteed fresh, never stale/duplicated.
+      // Pacing comes from requestAnimationFrame with `t` computed from actual
+      // elapsed wall-clock time (performance.now()) — exactly the same
+      // pattern the live animation curves (animPawn/animRook/etc.) already
+      // use — instead of assuming uniform timer ticks. This is standard,
+      // well-supported Chrome API surface (no invented/manual frame-
+      // injection mechanism); MediaRecorder is still an inherently real-time
+      // recorder, so a ~duration-long export still takes ~duration of wall
+      // time to produce — that's a property of MediaRecorder itself, not
+      // something a different timing mechanism can avoid.
+      //
+      // Feature-detected: if requestFrame() isn't available (very old
+      // Chrome), falls back to the previous fixed-rate auto-sampling so
+      // export still works, just without the stale-frame guarantee.
+      let stream = null, track = null, canRequestFrame = false;
+      try {
+        const probe = exportCanvas.captureStream(0);
+        const probeTrack = probe.getVideoTracks()[0];
+        if(probeTrack && typeof probeTrack.requestFrame === 'function'){
+          stream = probe; track = probeTrack; canRequestFrame = true;
+        }
+      } catch(e){ /* fall through to auto-rate capture below */ }
+      if(!stream){ stream = exportCanvas.captureStream(fps); }
+      exportStream = stream;
+
+      let mime = 'video/webm;codecs=vp9';
+      let recorder;
+      try { recorder = new MediaRecorder(stream, {mimeType: mime, videoBitsPerSecond: EXPORT_BITRATE}); }
+      catch(e){
+        console.warn("VP9 with alpha not supported, falling back.");
+        mime = 'video/webm';
+        try {
+          recorder = new MediaRecorder(stream, {mimeType: mime, videoBitsPerSecond: EXPORT_BITRATE});
+        } catch (e2) {
+          showMessage("Video recording is not supported on this browser.", "error");
+          releaseRecording();
+          setExportBusy(false);
+          return;
+        }
+      }
+      exportRecorder = recorder;
+      const chunks = [];
+      recorder.ondataavailable = e => { if(e.data && e.data.size) chunks.push(e.data); };
+      recorder.onstop = () => {
+        // An aborted export never downloads a partial file, and must not touch
+        // the lock: abortExport already released it, and a NEW export may hold
+        // it by the time this (asynchronous) stop event arrives.
+        if(aborted) return;
+        try {
+          downloadClip(new Blob(chunks, {type: mime}));
+        } finally {
+          releaseRecording();   // stop the capture track explicitly on success too
+          setExportBusy(false);
+        }
+      };
+
+      // Start recorder
+      recorder.start();
+      showMessage('Recording... Please wait.', 'success', duration + FINAL_HOLD_MS + 500);
+
+      let frameIndex = 0;
+      let lastPushedAt = -Infinity;
+      const minFrameIntervalMs = 1000 / fps;
+      function guardedFrameStep(now){ try { frameStep(now); } catch(err){ abortExport(err); } }
+      recorder.onerror = (e) => abortExport(e && e.error ? e.error : e);
+      function frameStep(now){
+        if(finished) return;
+        // Pace to ~fps against the wall clock (only ever delays a frame).
+        if(now - lastPushedAt < minFrameIntervalMs){ requestAnimationFrame(guardedFrameStep); return; }
+        renderFrame(frameIndex);
+        // 6. Push exactly this frame into the capture stream. Every frame the
+        //    schedule defines is pushed — there is no throttle decision here
+        //    any more, because the pacing above already decided that this tick
+        //    produces a frame. The schedule advances only on a pushed frame, so
+        //    a frame can never be skipped, including the landing frame.
+        //    (In the auto-rate fallback the browser samples the canvas on its
+        //    own clock; the schedule still advances identically, which is what
+        //    lets the loop terminate in that mode at all — the previous
+        //    termination test counted manually-pushed frames, so with
+        //    requestFrame unavailable it could never be satisfied and the loop
+        //    ran forever without ever stopping the recorder.)
+        if(canRequestFrame) track.requestFrame();
+        lastPushedAt = now;
+        frameIndex++;
+        if(frameIndex < TOTAL_FRAMES){
+          requestAnimationFrame(guardedFrameStep);
+        } else {
+          finished = true;
+          // Let the last pushed frames reach the encoder before stopping. The
+          // hold deliberately ends on several identical settled frames, so even
+          // if the encoder drops the very last one the settled state is still
+          // present in the file.
+          setTimeout(()=>{ recorder.stop(); }, Math.max(120, minFrameIntervalMs * 3));
+        }
+      }
+      requestAnimationFrame(guardedFrameStep);
+    }
+
+    if(typeof VideoEncoder === 'function' && typeof VideoFrame === 'function'){
+      encodeWithWebCodecs().catch(err => abortExport(err));
+    } else {
+      recordWithMediaRecorder();
+    }
   } catch (err) {
     console.error("Export failed:", err);
     // A setup failure can land after recorder.start(): stop the recorder and
