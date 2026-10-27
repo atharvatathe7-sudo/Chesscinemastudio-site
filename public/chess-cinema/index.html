@@ -333,6 +333,10 @@ button:active, button.active {
             <label class="small" for="seqTo">To</label>
             <select id="seqTo"></select>
           </div>
+          <label class="small" style="display:flex;align-items:flex-start;gap:6px;margin-top:4px;">
+            <input type="checkbox" id="autoFrame" style="margin:2px 0 0;">
+            <span>Auto close-ups for captures and checks (exported video only; the live board is not zoomed). Each framed move holds about 1.8 s.</span>
+          </label>
           <div class="small" id="seqInfo">Import a PGN or play moves to choose a sequence.</div>
           <div class="row controls-flex" style="margin-top:4px;">
             <button id="playSequence" disabled>Play Sequence</button>
@@ -983,6 +987,7 @@ const CAPTURE_FX_FRAMES = 15;   // ~0.5s at EXPORT_FPS, always carved out of the
 // display frames), so it lasts as long as in the export on any refresh rate.
 const CAPTURE_FX_MS = CAPTURE_FX_FRAMES * 1000 / EXPORT_FPS;
 let captureEffect = 'dissolve'; // set by the Capture FX control; 'off' disables entirely
+let autoFrameEvents = false;    // Phase 3B: automatic close framing of captures and checks (the #autoFrame setting, off by default)
 
 // Deterministic [0,1) from integer inputs — integer ops only, so it is
 // stable across runs, machines and idle-vs-stalled rendering.
@@ -2228,6 +2233,7 @@ document.getElementById('loadSample').addEventListener('click', ()=>{
 // are fixed at the start, so a flip mid-export would mix orientations in the file.
 document.getElementById('flip').addEventListener('click', ()=>{ if(exportInProgress){ showMessage('Wait for the export to finish.', 'error'); return; } boardFlipped = !boardFlipped; drawBoard(); redrawOverlay(); });
 document.getElementById('captureFx').addEventListener('change', (e)=>{ captureEffect = e.target.value; updateSequenceControls(); });
+document.getElementById('autoFrame').addEventListener('change', (e)=>{ autoFrameEvents = e.target.checked; updateSequenceControls(); });
 // Play/Export operate on the ACTIVE record — the selected timeline move if
 // one is selected, else the latest move (getActiveRecord()'s default) —
 // so previewing/exporting an older move works exactly like the latest one.
@@ -2347,7 +2353,7 @@ function updateSequenceControls(){
   let canRun = !r.error, tooLong = false;
   if(r.error){ info.textContent = r.error; }
   else {
-    const plan = sequencePlan(r.records, EXPORT_FPS, captureEffect);
+    const plan = sequencePlan(r.records, EXPORT_FPS, captureEffect, autoFrameEvents);
     const n = r.records.length, first = plyLabel(r.records[0]), last = plyLabel(r.records[n - 1]);
     info.textContent = `${n} ${n === 1 ? 'ply' : 'plies'}: ${first}${n > 1 ? ' → ' + last : ''}. Starts from the position before ${first}, ends after ${last}. ` +
                        `Video ${(plan.durationMs / 1000).toFixed(2)} s (${plan.totalFrames} frames).`;
@@ -2358,6 +2364,7 @@ function updateSequenceControls(){
   }
   fromSel.disabled = toSel.disabled = playing || !visible;
   document.getElementById('captureFx').disabled = playing;
+  document.getElementById('autoFrame').disabled = playing;
   document.getElementById('playSequence').disabled = !canRun || playing || exportInProgress;
   document.getElementById('stopSequence').disabled = !playing;
   document.getElementById('exportSequence').disabled = !canRun || tooLong || playing || exportInProgress;
@@ -2414,7 +2421,7 @@ function playSequence(){
   if(animHideSquares.size > 0){ showMessage('Wait for the current animation to finish.', 'error'); return; }
   const r = sequenceRange();
   if(r.error){ showMessage(r.error, 'error'); return; }
-  const plan = sequencePlan(r.records, EXPORT_FPS, captureEffect);
+  const plan = sequencePlan(r.records, EXPORT_FPS, captureEffect, autoFrameEvents);
   const run = { plan, records: r.records, raf: null, landed: 0, before: selectedPly };
   sequencePlayback.state = 'playing'; sequencePlayback.run = run;
   // Show the position before the first ply.
@@ -2742,6 +2749,13 @@ function exportHoldFrames(rec, fps){
    the single-move export: unchanged except that a mating move now holds its
    final position for 5 s. */
 const PACE_ORDINARY_MS = 450, PACE_CAPTURE_MS = 700, PACE_CHECK_MS = 700, PACE_MATE_MS = 5000, PACE_FINAL_MS = 1000;
+/* AUTOMATIC CLOSE FRAMING (Phase 3B, the #autoFrame export setting, off by
+   default). With it on, a capture or a check that is not checkmate and that
+   the creator has not marked is framed by the export camera as if it were
+   marked (see buildMoveClip, cameraTransitions), and holds at least
+   AUTO_FRAME_HOLD_MS: a 500 ms zoom-in after landing, about 1 s of close-up,
+   a 300 ms zoom-out. Movement time and every other hold are unchanged. */
+const AUTO_FRAME_HOLD_MS = 1800;
 function moveClass(rec){
   if(rec.san && /#$/.test(rec.san)) return 'checkmate';
   if(rec.checkSquare) return 'check';
@@ -2752,7 +2766,7 @@ function viewingIntervalMs(rec, last){
   const ms = { checkmate: PACE_MATE_MS, check: PACE_CHECK_MS, capture: PACE_CAPTURE_MS, ordinary: PACE_ORDINARY_MS }[moveClass(rec)];
   return last ? Math.max(ms, PACE_FINAL_MS) : ms;
 }
-function sequencePlan(records, fps, fxKind){
+function sequencePlan(records, fps, fxKind, autoFrame = false){
   const moves = [];
   let cursor = 0;
   records.forEach((rec, i) => {
@@ -2761,13 +2775,16 @@ function sequencePlan(records, fps, fxKind){
     const hf = exportHoldFrames(rec, fps);
     const marked = !!((rec.storyTargets && rec.storyTargets.length) || (rec.arrows && rec.arrows.length) ||
                       (rec.highlights && rec.highlights.length) || rec.badge);
-    const fullHold = last || marked;
+    const cls = moveClass(rec);
+    const auto = !!autoFrame && !marked && (cls === 'capture' || cls === 'check');
+    const fullHold = last || marked || auto;
     const viewMs = viewingIntervalMs(rec, last);
     const hold = Math.max(viewMs * fps,                                                       // ms x fps
                           fullHold ? hf.total * 1000 : 0,                                     // frames x 1000
+                          auto ? Math.round(AUTO_FRAME_HOLD_MS * fps / 1000) * 1000 : 0,      // frames x 1000
                           (captureVictim(rec) && fxKind !== 'off') ? hf.FX_FRAMES * 1000 : 0);
     const start = cursor, land = start + T * fps, end = land + hold;
-    moves.push({ rec, T, cls: moveClass(rec), viewMs, holdMs: hold / fps, fullHold, start, land, end, landFrame: Math.ceil(land / 1000) });
+    moves.push({ rec, T, cls, viewMs, holdMs: hold / fps, fullHold, auto, start, land, end, landFrame: Math.ceil(land / 1000) });
     cursor = end;
   });
   const totalFrames = Math.ceil(cursor / 1000) + 1;   // + the closing frame
@@ -2809,6 +2826,11 @@ function planFrame(plan, n){
        MATE_CLOSEUP_MS once settled, then the camera eases back to the full
        board over CAMERA_TRANSITION_MS and stays there to the last frame, all
        inside the mate's existing hold.
+   Automatically framed moves (Phase 3B) are zoomed into the same way as
+   Story Target moves when they follow the full board. Between two of them,
+   a close-up that already holds everything the next move needs (its
+   subjectBox) is simply kept through that move, so the camera does not move;
+   otherwise the usual ease applies. Marked moves are never reused this way.
    `clips` are the export's buildMoveClip()s for plan.moves. Returns the crops
    that replace a move's own, by frame. */
 const CAMERA_TRANSITION_MS = 300, CAMERA_TRANSITION_MIN_FRAMES = 3, CAMERA_ZOOM_IN_MS = 500, MATE_CLOSEUP_MS = 1000;
@@ -2817,25 +2839,31 @@ function cameraTransitions(plan, clips){
   const cropOf = (n) => { const f = planFrame(plan, n); return clips[f.k].cropAt(f.t, f.holdIndex, plan.moves[f.k].fullHold); };
   const same = (a, b) => a.sx === b.sx && a.sy === b.sy && a.box === b.box;
   const lerpCrop = (a, b, e) => ({ sx: a.sx + (b.sx - a.sx) * e, sy: a.sy + (b.sy - a.sy) * e, box: a.box + (b.box - a.box) * e });
+  const contains = (c, b) => c.sx <= b[0] && c.sy <= b[1] && c.sx + c.box >= b[2] && c.sy + c.box >= b[3];
+  const shown = (n) => crops.get(n) || cropOf(n);   // the crop actually shown, once an earlier step replaced it
   const FULL = { sx: 0, sy: 0, box: LOGICAL_SIZE };
   const frames = (ms) => Math.round(ms * plan.fps / 1000);
   const last = plan.moves.length - 1;
   const maxFrames = frames(CAMERA_TRANSITION_MS) - 1;
   for(let k = 0; k + 1 < plan.moves.length; k++){
     const next = Math.ceil(plan.moves[k].end / 1000);   // the next move's first frame
-    const from = cropOf(next - 1), to = cropOf(next);
+    const from = shown(next - 1), to = cropOf(next);
     if(same(from, to)) continue;
     const nx = plan.moves[k + 1], nxEnd = k + 1 < last ? Math.ceil(nx.end / 1000) : plan.totalFrames;
     const zoom = frames(CAMERA_ZOOM_IN_MS);
-    if(!plan.moves[k].fullHold && nx.rec.storyTargets.length && same(from, FULL) && nx.landFrame + zoom < nxEnd){
+    if((!plan.moves[k].fullHold || plan.moves[k].auto) && (nx.rec.storyTargets.length || nx.auto) && same(from, FULL) && nx.landFrame + zoom < nxEnd){
       for(let n = next; n <= nx.landFrame; n++) crops.set(n, FULL);
       for(let h = 1; h < zoom; h++) crops.set(nx.landFrame + h, lerpCrop(FULL, cropOf(nx.landFrame + h), easeInOutCubic(h / zoom)));
+      continue;
+    }
+    if(plan.moves[k].auto && nx.auto && !same(from, FULL) && contains(from, clips[k + 1].subjectBox())){
+      for(let n = next; n < nxEnd; n++) crops.set(n, from);
       continue;
     }
     // Hold frames after the landing frame on which this move's camera is
     // already at rest on `from`.
     let still = 0;
-    for(let n = next - 1; n > plan.moves[k].landFrame && same(cropOf(n), from); n--) still++;
+    for(let n = next - 1; n > plan.moves[k].landFrame && same(shown(n), from); n--) still++;
     const count = Math.min(maxFrames, Math.floor(still / 2));
     if(count < CAMERA_TRANSITION_MIN_FRAMES) continue;
     for(let j = 1; j <= count; j++) crops.set(next - 1 - count + j, lerpCrop(from, to, easeInOutCubic(j / (count + 1))));
@@ -2994,7 +3022,7 @@ function exportMovesAsWebM(records, opts={fps:EXPORT_FPS}){
   try {
     const fps = opts.fps || EXPORT_FPS;
     // The whole timeline is known before anything is allocated or encoded.
-    const plan = sequencePlan(records, fps, captureEffect);
+    const plan = sequencePlan(records, fps, captureEffect, autoFrameEvents);
     if(plan.totalFrames > MAX_EXPORT_FRAMES){
       showMessage(`That range makes a ${Math.round(plan.durationMs / 1000)} s video (${plan.totalFrames} frames). ` +
                   `The longest export supported is ${MAX_EXPORT_FRAMES} frames (${MAX_EXPORT_FRAMES / fps} s) — choose a shorter range.`, 'error', 8000);
@@ -3028,7 +3056,7 @@ function exportMovesAsWebM(records, opts={fps:EXPORT_FPS}){
     // Everything below is per move: its snapshots, camera and hold stages.
     // buildMoveClip(record).renderAt(...) draws that move at a point of its
     // timeline; the sequence timeline decides which move and which point.
-    function buildMoveClip(moveRec){
+    function buildMoveClip(moveRec, autoFrame){
       // prepare snapshot and moving info — moveRec is now the rich per-ply
       // record built by buildMoveRecord() (see MOVE APPLY section), so the
       // moving piece's *post-move* type/color is known directly (fixes
@@ -3208,7 +3236,9 @@ function exportMovesAsWebM(records, opts={fps:EXPORT_FPS}){
       // seeding would hand the UNCAPPED trajectory extent straight back and
       // silently undo the cap, which is what still made Qa1-a8 open out to
       // the whole board.
-      const hasAnnotations = recHighlights.length > 0 || recArrows.length > 0 || hasStoryTargets;
+      // An automatically framed move (Phase 3B) takes the same camera as a
+      // marked one, with nothing but its own path to frame.
+      const hasAnnotations = recHighlights.length > 0 || recArrows.length > 0 || hasStoryTargets || !!autoFrame;
       const annBox  = hasAnnotations ? cap(Math.max(annW, annH), MIN_BOX, LOGICAL_SIZE) : 0;
       // DIRECTORIAL RULE: piece movement alone must never trigger cinematic
       // camera behaviour. Only an explicit creator marker — a Story Target,
@@ -3601,7 +3631,23 @@ function exportMovesAsWebM(records, opts={fps:EXPORT_FPS}){
         return { sx, sy, box: frameBox };
       }
 
-      return { renderAt, cropAt };
+      // What this move must keep in view (logical px, [minX, minY, maxX,
+      // maxY]): the drawn piece(s) along the whole path, the landing square,
+      // an en passant victim's square and a checked king's square — on the
+      // board, which is all a crop can show (a piece on an edge square is
+      // drawn slightly past it).
+      function subjectBox(){
+        const xs = trajXs.slice(), ys = trajYs.slice();
+        for(const sq of [to, fxVictim && fxVictim.sq, moveRec.checkSquare]){
+          if(!sq) continue;
+          const c = squareCenter(sq);
+          xs.push(c.x - SQ/2, c.x + SQ/2); ys.push(c.y - SQ/2, c.y + SQ/2);
+        }
+        const onBoard = (v) => Math.max(0, Math.min(LOGICAL_SIZE, v));
+        return [onBoard(Math.min(...xs)), onBoard(Math.min(...ys)), onBoard(Math.max(...xs)), onBoard(Math.max(...ys))];
+      }
+
+      return { renderAt, cropAt, subjectBox };
     }
 
     // ---------------- FRAME SCHEDULE: ENDPOINT RULE ----------------
@@ -3618,7 +3664,7 @@ function exportMovesAsWebM(records, opts={fps:EXPORT_FPS}){
     //             final framing
     // For one move: ceil(T*fps/1000) movement frames + the hold + 1, exactly
     // as before. The file is TOTAL_FRAMES*1000/fps ms long on any machine.
-    const clips = records.map(rec => buildMoveClip(rec));
+    const clips = records.map((rec, i) => buildMoveClip(rec, plan.moves[i].auto));
     const transitions = cameraTransitions(plan, clips);
     const TOTAL_FRAMES = plan.totalFrames;
     function renderFrame(n){
