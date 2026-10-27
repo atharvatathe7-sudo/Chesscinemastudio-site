@@ -357,23 +357,31 @@ button:active, button.active {
             <button id="cancelExport" disabled>Cancel Export</button>
           </div>
         </div>
-        <!-- Story plan (Phase 4A): a JSON plan written by an external AI is
-             checked against the loaded game and reported. Validation only:
-             there is no Apply, nothing in the plan is used by playback, the
-             camera, timing or export. -->
+        <!-- Story plan (Phase 4A validation, Phase 4B.1 execution): a JSON
+             plan written by an external AI is checked against the loaded
+             game and, when applied, drives Play Sequence / Export Sequence
+             (range, marks, Story Targets, automatic framing, holds) until it
+             is deactivated. The user's own range, setting and annotations are
+             kept untouched meanwhile. -->
         <details class="plan-panel" id="planPanel">
-          <summary class="small">Story plan (JSON) — validation only</summary>
-          <div class="small" style="margin:4px 0;">Paste a plan (schema <code>chess-cinema-plan/1</code>) and press Validate. It is checked against the loaded game; nothing in it is applied yet.</div>
+          <summary class="small">Story plan (JSON)</summary>
+          <div class="small" style="margin:4px 0;">Paste a plan (schema <code>chess-cinema-plan/1</code>). <b>Validate</b> checks it against the loaded game; <b>Apply</b> makes Play Sequence and Export Sequence follow it until you <b>Deactivate</b> it. <b>Copy game header</b> gives the <code>game</code> block (with its fingerprint) for the AI to copy into the plan.</div>
           <textarea id="planInput" spellcheck="false" placeholder='{"schema": "chess-cinema-plan/1", "game": {...}, "moves": [...]}' style="width:100%;box-sizing:border-box;height:90px;font-family:monospace;font-size:12px;"></textarea>
           <div class="row controls-flex" style="margin-top:4px;">
             <button id="validatePlan">Validate</button>
+            <button id="applyPlan">Apply</button>
+            <button id="deactivatePlan" disabled>Deactivate</button>
             <button id="clearPlan">Clear</button>
             <button id="copyPlanReport" disabled>Copy report</button>
+            <button id="copyGameHeader">Copy game header</button>
           </div>
+          <div class="small" id="planActiveStatus">No plan is active.</div>
+          <textarea id="gameHeaderText" readonly aria-label="Game header for the plan" style="display:none;width:100%;box-sizing:border-box;height:72px;font-family:monospace;font-size:12px;"></textarea>
           <div class="small" id="planStale">The loaded game changed after this report was made: validate again.</div>
           <div class="small" id="planReport"></div>
           <ul class="small" id="planChecks"></ul>
           <div class="small" id="planInspector"></div>
+          <div class="small" id="planTimeline"></div>
           <textarea id="planReportText" readonly aria-label="Plan validation report (text)" style="display:none;width:100%;box-sizing:border-box;height:90px;font-family:monospace;font-size:12px;"></textarea>
         </details>
         <div class="row" style="flex-wrap:wrap;">
@@ -837,7 +845,7 @@ function redrawOverlay(landed = true){
   const s = LOGICAL_SIZE/8;
   // Move-scoped: only the active record's (selected, or latest-move-by-
   // default) arrows/highlights are shown — see getActiveRecord().
-  const activeRec = getActiveRecord();
+  const activeRec = storyPlanDisplayRecord(getActiveRecord());   // a story plan's own marks while it is active
   const activeHighlights = activeRec ? activeRec.highlights : [];
   const activeArrows = activeRec ? activeRec.arrows : [];
   if(landed){
@@ -1324,12 +1332,14 @@ function onDown(e){
   // --- 1-Finger Actions ---
   if(currentMode === 'arrow'){ 
     isPanning = false; isPinching = false; dragging = null;
+    if(storyPlanBlocksEditing()) return;
     arrowTemp = {from: sq, start: p}; 
     return; 
   }
   if(currentMode === 'highlight'){
     isPanning = false; isPinching = false; dragging = null;
     if(!sq) return;
+    if(storyPlanBlocksEditing()) return;
     const rec = getActiveRecord();
     if(!rec){ showMessage('Make a move first to annotate it.', 'error'); return; }
     rec.highlights.push({file:'abcdefgh'.indexOf(sq[0]), rank:8-parseInt(sq[1],10), sq: sq, color: hexToRgba(currentAnnotationColor('highlight'),1), alpha:0.28});
@@ -1340,6 +1350,7 @@ function onDown(e){
   if(currentMode === 'story'){
     isPanning = false; isPinching = false; dragging = null;
     if(!sq) return;
+    if(storyPlanBlocksEditing()) return;
     const rec = getActiveRecord();
     if(!rec){ showMessage('Make a move first to give it story targets.', 'error'); return; }
     toggleStoryTarget(rec, sq);
@@ -2268,11 +2279,11 @@ document.getElementById('autoFrame').addEventListener('change', (e)=>{ autoFrame
 // Play/Export operate on the ACTIVE record — the selected timeline move if
 // one is selected, else the latest move (getActiveRecord()'s default) —
 // so previewing/exporting an older move works exactly like the latest one.
-document.getElementById('playAnim').addEventListener('click', ()=>{ const rec = getActiveRecord(); if(rec) playRecordAnimation(rec, ()=>{ updateHistory(); updateStatus(); }); });
-document.getElementById('exportAnim').addEventListener('click', ()=>{ const rec = getActiveRecord(); if(!rec){ showMessage('Make a move first (drag a piece). Export records the selected move.', 'error'); return; } exportLastMoveAsWebM(rec, {fps: EXPORT_FPS}); });
+document.getElementById('playAnim').addEventListener('click', ()=>{ if(storyPlanBlocksSingleMove()) return; const rec = getActiveRecord(); if(rec) playRecordAnimation(rec, ()=>{ updateHistory(); updateStatus(); }); });
+document.getElementById('exportAnim').addEventListener('click', ()=>{ if(storyPlanBlocksSingleMove()) return; const rec = getActiveRecord(); if(!rec){ showMessage('Make a move first (drag a piece). Export records the selected move.', 'error'); return; } exportLastMoveAsWebM(rec, {fps: EXPORT_FPS}); });
 const removeBtn = document.getElementById('removeToggle'); removeBtn.addEventListener('click', ()=>{ removeMode = !removeMode; removeBtn.classList.toggle('active', removeMode); removeBtn.textContent = removeMode ? 'Remove: ON' : 'Remove Piece'; });
-document.getElementById('clearAll').addEventListener('click', ()=>{ const rec=getActiveRecord(); if(rec){ rec.arrows=[]; rec.highlights=[]; } redrawOverlay(); updateHistory(); });
-document.getElementById('clearStoryTargets').addEventListener('click', ()=>{ const rec=getActiveRecord(); if(rec) rec.storyTargets=[]; redrawOverlay(); updateHistory(); });
+document.getElementById('clearAll').addEventListener('click', ()=>{ if(storyPlanBlocksEditing()) return; const rec=getActiveRecord(); if(rec){ rec.arrows=[]; rec.highlights=[]; } redrawOverlay(); updateHistory(); });
+document.getElementById('clearStoryTargets').addEventListener('click', ()=>{ if(storyPlanBlocksEditing()) return; const rec=getActiveRecord(); if(rec) rec.storyTargets=[]; redrawOverlay(); updateHistory(); });
 
 // NEW (Phase 3): return the board/annotation context to the live position.
 document.getElementById('backToLive').addEventListener('click', ()=>{ if(historyPointer > 0) selectMove(historyPointer); });
@@ -2283,6 +2294,7 @@ document.getElementById('backToLive').addEventListener('click', ()=>{ if(history
 document.getElementById('annotationSelect').addEventListener('change', (e)=>{
   const rec = getActiveRecord();
   if(!rec) return;
+  if(storyPlanBlocksEditing()){ e.target.value = rec.annotation || ''; return; }
   rec.annotation = e.target.value;
   rec.badge = badgeForClassification(e.target.value); // symbol derived, never chosen separately
   updateTimeline();
@@ -2378,27 +2390,32 @@ function updateSequenceControls(){
   const options = moveHistory.slice(0, visible).map(rec => `<option value="${rec.ply}">${plyLabel(rec)}</option>`).join('');
   if(fromSel.dataset.options !== options || fromSel.options.length !== visible || toSel.options.length !== visible){ fromSel.innerHTML = options; toSel.innerHTML = options; fromSel.dataset.options = options; }
   if(visible){ fromSel.value = String(st.from); toSel.value = String(st.to); }
-  const r = sequenceRange();
+  const r = sequenceInputs();
   const playing = sequencePlayback.state === 'playing';
   const info = document.getElementById('seqInfo');
   let canRun = !r.error, tooLong = false;
   if(r.error){ info.textContent = r.error; }
   else {
-    const plan = sequencePlan(r.records, EXPORT_FPS, captureEffect, autoFrameEvents);
+    const plan = sequencePlan(r.records, EXPORT_FPS, captureEffect, r.autoFrame, r.holds);
     const n = r.records.length, first = plyLabel(r.records[0]), last = plyLabel(r.records[n - 1]);
-    info.textContent = `${n} ${n === 1 ? 'ply' : 'plies'}: ${first}${n > 1 ? ' → ' + last : ''}. Starts from the position before ${first}, ends after ${last}. ` +
+    info.textContent = (r.fromPlan ? `Story plan active (automatic close framing ${r.autoFrame ? 'on' : 'off'}). ` : '') +
+                       `${n} ${n === 1 ? 'ply' : 'plies'}: ${first}${n > 1 ? ' → ' + last : ''}. Starts from the position before ${first}, ends after ${last}. ` +
                        `Video ${(plan.durationMs / 1000).toFixed(2)} s (${plan.totalFrames} frames).`;
     if(plan.totalFrames > MAX_EXPORT_FRAMES){
       tooLong = true;
       info.textContent += ` Too long to export (limit ${MAX_EXPORT_FRAMES} frames, ${MAX_EXPORT_FRAMES / EXPORT_FPS} s) — choose a shorter range. It can still be played.`;
     }
   }
-  fromSel.disabled = toSel.disabled = playing || !visible;
+  // While a story plan is active it sets the range and the framing setting;
+  // the user's own choices are kept, untouched, for when it is deactivated.
+  const planActive = !!storyPlanBound();
+  fromSel.disabled = toSel.disabled = playing || !visible || planActive;
   document.getElementById('captureFx').disabled = playing;
-  document.getElementById('autoFrame').disabled = playing;
+  document.getElementById('autoFrame').disabled = playing || planActive;
   document.getElementById('playSequence').disabled = !canRun || playing || exportInProgress;
   document.getElementById('stopSequence').disabled = !playing;
   document.getElementById('exportSequence').disabled = !canRun || tooLong || playing || exportInProgress;
+  try { renderPlanTimelineIfChanged(); } catch(e){ console.error('Story plan: timeline view failed:', e); }   // Phase 4B.1
 }
 document.getElementById('seqFrom').addEventListener('change', (e)=>{ sequenceRangeState.from = parseInt(e.target.value, 10); updateSequenceControls(); });
 document.getElementById('seqTo').addEventListener('change', (e)=>{ sequenceRangeState.to = parseInt(e.target.value, 10); updateSequenceControls(); });
@@ -2450,9 +2467,10 @@ function playSequence(){
   if(sequencePlayback.state !== 'idle') return;
   if(exportInProgress){ showMessage('Wait for the export to finish.', 'error'); return; }
   if(animHideSquares.size > 0){ showMessage('Wait for the current animation to finish.', 'error'); return; }
-  const r = sequenceRange();
+  if(checkStoryPlanBinding()) return;
+  const r = sequenceInputs();
   if(r.error){ showMessage(r.error, 'error'); return; }
-  const plan = sequencePlan(r.records, EXPORT_FPS, captureEffect, autoFrameEvents);
+  const plan = sequencePlan(r.records, EXPORT_FPS, captureEffect, r.autoFrame, r.holds);
   const run = { plan, records: r.records, raf: null, landed: 0, before: selectedPly };
   sequencePlayback.state = 'playing'; sequencePlayback.run = run;
   // Show the position before the first ply.
@@ -2509,9 +2527,10 @@ document.getElementById('playSequence').addEventListener('click', playSequence);
 document.getElementById('stopSequence').addEventListener('click', stopSequence);
 document.getElementById('exportSequence').addEventListener('click', ()=>{
   if(sequencePlayback.state !== 'idle'){ showMessage('Stop the sequence first.', 'error'); return; }
-  const r = sequenceRange();
+  if(checkStoryPlanBinding()) return;
+  const r = sequenceInputs();
   if(r.error){ showMessage(r.error, 'error'); return; }
-  exportMovesAsWebM(r.records, { fps: EXPORT_FPS, button: 'exportSequence' });
+  exportMovesAsWebM(r.records, { fps: EXPORT_FPS, button: 'exportSequence', autoFrame: r.autoFrame, holds: r.holds });
 });
 document.getElementById('cancelExport').addEventListener('click', ()=>{ if(cancelActiveExport) cancelActiveExport(); });
 // While a sequence plays, controls that would change the game, the selection,
@@ -2592,6 +2611,7 @@ function updateAnnotationPanel(){
 
 /* history UI (Original, now move-scoped — Phase 3) */
 function updateHistory(){
+  checkStoryPlanBinding();   // Phase 4B.1: a changed game deactivates an applied story plan
   updateTimeline();
   updateSequenceControls();
   updateAnnotationPanel();
@@ -2601,12 +2621,12 @@ function updateHistory(){
   const el=document.getElementById('historyList'); el.innerHTML='';
   activeArrows.forEach((a,i)=>{ const d=document.createElement('div'); d.style.padding='6px'; d.style.borderBottom='1px solid rgba(255,255,255,0.03)'; d.innerHTML=`Arrow ${i+1}: ${a.from} → ${a.to} <button data-i='${i}' style="padding: 2px 5px; font-size: 10px; float: right;">X</button>`; el.appendChild(d); });
   activeHighlights.forEach((h,i)=>{ const d=document.createElement('div'); d.style.padding='6px'; d.style.borderBottom='1px solid rgba(255,255,255,0.03)'; d.innerHTML=`Highlight ${i+1}: ${h.sq} <button data-i='h${i}' style="padding: 2px 5px; font-size: 10px; float: right;">X</button>`; el.appendChild(d); });
-  el.querySelectorAll('button').forEach(b=>{ b.onclick=()=>{ const id=b.dataset.i; const rec2=getActiveRecord(); if(!rec2) return; if(id.startsWith('h')){ rec2.highlights.splice(parseInt(id.slice(1)),1); } else { rec2.arrows.splice(parseInt(id),1); } redrawOverlay(); updateHistory(); }; });
+  el.querySelectorAll('button').forEach(b=>{ b.onclick=()=>{ if(storyPlanBlocksEditing()) return; const id=b.dataset.i; const rec2=getActiveRecord(); if(!rec2) return; if(id.startsWith('h')){ rec2.highlights.splice(parseInt(id.slice(1)),1); } else { rec2.arrows.splice(parseInt(id),1); } redrawOverlay(); updateHistory(); }; });
   markPlanReportStale();   // Phase 4A: a shown plan report no longer describes a changed game
 }
 
 /* hotkeys (Original) */
-document.addEventListener('keydown', (e)=>{ if(document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') return; if(e.key==='m'||e.key==='M'){ document.getElementById('mode').value='move'; document.getElementById('mode').dispatchEvent(new Event('change')); } if(e.key==='a'||e.key==='A'){ document.getElementById('mode').value='arrow'; document.getElementById('mode').dispatchEvent(new Event('change')); } if(e.key==='h'||e.key==='H'){ document.getElementById('mode').value='highlight'; document.getElementById('mode').dispatchEvent(new Event('change')); } if(e.key==='c'||e.key==='C'){ const rec=getActiveRecord(); if(rec){ rec.arrows=[]; rec.highlights=[]; } redrawOverlay(); updateHistory(); } if(e.key==='f'||e.key==='F'){ document.getElementById('flip').click(); } if(e.code === 'Space'){ e.preventDefault(); document.getElementById('playAnim').click(); } });
+document.addEventListener('keydown', (e)=>{ if(document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') return; if(e.key==='m'||e.key==='M'){ document.getElementById('mode').value='move'; document.getElementById('mode').dispatchEvent(new Event('change')); } if(e.key==='a'||e.key==='A'){ document.getElementById('mode').value='arrow'; document.getElementById('mode').dispatchEvent(new Event('change')); } if(e.key==='h'||e.key==='H'){ document.getElementById('mode').value='highlight'; document.getElementById('mode').dispatchEvent(new Event('change')); } if(e.key==='c'||e.key==='C'){ if(storyPlanBlocksEditing()) return; const rec=getActiveRecord(); if(rec){ rec.arrows=[]; rec.highlights=[]; } redrawOverlay(); updateHistory(); } if(e.key==='f'||e.key==='F'){ document.getElementById('flip').click(); } if(e.code === 'Space'){ e.preventDefault(); document.getElementById('playAnim').click(); } });
 
 /* ---------------- ZOOM helpers (MODIFIED for Pan/Zoom) ---------------- */
 function zoomToSquareSmooth(sq){
@@ -2903,7 +2923,12 @@ function viewingIntervalMs(rec, last){
   const ms = { checkmate: PACE_MATE_MS, check: PACE_CHECK_MS, capture: PACE_CAPTURE_MS, ordinary: PACE_ORDINARY_MS }[moveClass(rec)];
   return last ? Math.max(ms, PACE_FINAL_MS) : ms;
 }
-function sequencePlan(records, fps, fxKind, autoFrame = false){
+// `holds` (Phase 4B.1, an applied story plan only; null otherwise): requested
+// viewing intervals { moveMs: { ply: ms }, finalMs } that REPLACE the class
+// interval above (finalMs for the range's last move, the checkmate default
+// included). The structural floors below still apply, so a request can only
+// lengthen what a move needs, never cut into a camera hold or an effect beat.
+function sequencePlan(records, fps, fxKind, autoFrame = false, holds = null){
   const moves = [];
   let cursor = 0;
   records.forEach((rec, i) => {
@@ -2916,7 +2941,10 @@ function sequencePlan(records, fps, fxKind, autoFrame = false){
     const auto = !!autoFrame && !marked && (cls === 'capture' || cls === 'check') &&
                  moveFramingBoxes(rec, true).settledBox < LOGICAL_SIZE;
     const fullHold = last || marked || auto;
-    const viewMs = viewingIntervalMs(rec, last);
+    const requested = !holds ? null
+      : (last && holds.finalMs != null) ? holds.finalMs
+      : (holds.moveMs && holds.moveMs[rec.ply] != null) ? holds.moveMs[rec.ply] : null;
+    const viewMs = requested != null ? requested : viewingIntervalMs(rec, last);
     const hold = Math.max(viewMs * fps,                                                       // ms x fps
                           fullHold ? hf.total * 1000 : 0,                                     // frames x 1000
                           auto ? Math.round(AUTO_FRAME_HOLD_MS * fps / 1000) * 1000 : 0,      // frames x 1000
@@ -3183,7 +3211,9 @@ function exportMovesAsWebM(records, opts={fps:EXPORT_FPS}){
   try {
     const fps = opts.fps || EXPORT_FPS;
     // The whole timeline is known before anything is allocated or encoded.
-    const plan = sequencePlan(records, fps, captureEffect, autoFrameEvents);
+    // A story plan's sequence brings its own framing setting and hold
+    // requests (opts.autoFrame / opts.holds); every other export is unchanged.
+    const plan = sequencePlan(records, fps, captureEffect, opts.autoFrame === undefined ? autoFrameEvents : opts.autoFrame, opts.holds || null);
     if(plan.totalFrames > MAX_EXPORT_FRAMES){
       showMessage(`That range makes a ${Math.round(plan.durationMs / 1000)} s video (${plan.totalFrames} frames). ` +
                   `The longest export supported is ${MAX_EXPORT_FRAMES} frames (${MAX_EXPORT_FRAMES / fps} s) — choose a shorter range.`, 'error', 8000);
@@ -4015,31 +4045,49 @@ function exportMovesAsWebM(records, opts={fps:EXPORT_FPS}){
   }
 }
 
-/* ---------------- STORY PLAN: VALIDATION ONLY (Phase 4A) ----------------
+/* ---------------- STORY PLAN (Phase 4A validation, Phase 4B.1 execution) ----------------
    A plan written by an external AI (schema chess-cinema-plan/1; see
    docs/chess-cinema/phase4-5-requirements.md on the docs branch) is checked
-   against the loaded game and reported, with an inspector of what it asks
-   for. Nothing in it is applied: there is no Apply in this phase, so
-   playback, timing, camera, marks and export never read it.
+   against the loaded game (Validate) and can be made the source of the
+   sequence (Apply) until it is deactivated.
 
-   Validation only READS the game — the move records, historyPointer,
+   VALIDATION only READS the game — the move records, historyPointer,
    importedLimit, game.fen()/game.pgn() — and replays it on a throwaway
-   chess.js instance. It writes nothing but this panel.
-
-   Stages, in order (each reports every problem it finds):
+   chess.js instance. Stages, in order (each reports every problem it finds):
      1. size, JSON, top-level object, schema id   (any error stops here)
      2. structure: required fields, types, strict unknown fields, value
-        ranges, duplicates. Later-phase (P1) fields are recognised and
-        rejected (E_UNSUPPORTED_COMMAND); `optional` cannot skip them yet.
-     3. game binding — only if the `game` section is well formed: ply
-        count, start position, final position (when the plan gives one)
-     4. references — only if 2 and 3 found no error: range, each move's
-        ply and SAN, claims, conflicts
-   A check that does not run, or has nothing to compare, is reported as
-   such ("not run" / "not checked"), never as passed. Binding is evidence,
-   not proof, that the plan was written for this game: only the ply count,
-   the two positions and the referenced plies' SAN are compared. (A
-   deterministic game fingerprint is a design point for Phase 4B.)
+        ranges, duplicates. Later-phase fields are recognised and rejected
+        (E_UNSUPPORTED_COMMAND); `optional` cannot skip them yet.
+     3. game binding — only if the `game` section is well formed: ply count,
+        start position, final position (when given) and the game
+        FINGERPRINT (required to apply, see below)
+     4. references — only if 2 and 3 found no error: range, each move's ply
+        and SAN, claims, conflicts, and what this version cannot execute yet
+   A check that does not run, or has nothing to compare, is reported as such
+   ("not run" / "not checked"), never as passed.
+
+   FINGERPRINT. "sha256:" + the SHA-256 (hex) of the UTF-8 text
+     cc-game/1 \n <start position: first 4 FEN fields> \n <ply count> \n
+     <every selectable ply in UCI (from+to+promotion), separated by spaces>
+   built from the throwaway replay. The app makes it (Copy game header); the
+   AI copies it into the plan. Apply refuses a plan without it or with
+   another one. It needs crypto.subtle (a secure page: https or a local file).
+
+   APPLY (Phase 4B.1) revalidates the current text, then compiles the plan
+   into a CompiledPlan — frozen copies of the range's move records carrying
+   ONLY the plan's marks (highlights, arrows, Story Targets from
+   frame.targets; no classification), the plan's automatic-framing setting
+   and its hold requests — and checks it. Only if every step succeeds is it
+   activated, by one assignment; otherwise nothing changes and a previously
+   active plan stays as it was. moveHistory, the user's annotations, range
+   selection and #autoFrame setting are never written: the plan is read
+   INSTEAD of them (sequenceInputs(), storyPlanDisplayRecord()), so
+   Deactivate / Clear restore the manual behaviour exactly. While a plan is
+   active: annotation editing and single-move Play/Export Animation are
+   refused; outside its range no marks are shown; a change to the loaded game
+   deactivates it. No persistence: a reload drops it.
+   Not executed yet (reported, and refused by Apply): frame.mode "close" /
+   "full", ending.return_to_full: true.
    Limits are provisional. Duplicate keys inside a JSON object are not
    detected (JSON.parse keeps the last one). */
 const PLAN_SCHEMA_ID = 'chess-cinema-plan/1';
@@ -4048,13 +4096,14 @@ const PLAN_HOLD_MS_MAX = 20000;                                         // provi
 const PLAN_ENDING_HOLD_MS_MIN = 1000, PLAN_ENDING_HOLD_MS_MAX = 20000;  // provisional
 const PLAN_CLAIMS = ['capture', 'check', 'mate', 'castle', 'en_passant', 'promotion'];
 const PLAN_STANDARD_START = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -';
+const PLAN_GAME_CANON_ID = 'cc-game/1';
 // The schema, as data: per object kind, its fields. Types: string, int, bool,
-// enum, square, color, fen, object (of: kind), array (items).
+// enum, square, color, fen, fingerprint, object (of: kind), array (items).
 const PLAN_FIELDS = {
   root:      { schema: { t: 'string', req: true }, game: { t: 'object', of: 'game', req: true }, analysis: { t: 'object', of: 'analysis' },
                range: { t: 'object', of: 'range' }, defaults: { t: 'object', of: 'defaults' },
                moves: { t: 'array', items: { t: 'object', of: 'move' } }, ending: { t: 'object', of: 'ending' } },
-  game:      { plies: { t: 'int', req: true, min: 1 }, final_fen: { t: 'fen' }, start_fen: { t: 'fen' } },
+  game:      { plies: { t: 'int', req: true, min: 1 }, final_fen: { t: 'fen' }, start_fen: { t: 'fen' }, fingerprint: { t: 'fingerprint' } },
   analysis:  { source: { t: 'string', nonEmpty: true } },
   range:     { from_ply: { t: 'int', req: true, min: 1 }, to_ply: { t: 'int', req: true, min: 1 } },
   defaults:  { auto_frame: { t: 'bool' } },
@@ -4068,7 +4117,7 @@ const PLAN_FIELDS = {
   ending:    { hold_ms: { t: 'int', min: PLAN_ENDING_HOLD_MS_MIN, max: PLAN_ENDING_HOLD_MS_MAX }, return_to_full: { t: 'bool' } }
 };
 // Recognised, planned for a later phase, rejected here. `optional` (skip an
-// unsupported command) is itself not available in Phase 4A, wherever it appears.
+// unsupported command) is itself not available yet, wherever it appears.
 const PLAN_UNSUPPORTED = { root: ['groups', 'acts', 'intro', 'camera', 'settings'], move: ['classification', 'move_ms', 'anticipation_ms'] };
 const planOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
 const planFen4 = (fen) => String(fen).trim().split(/\s+/).slice(0, 4).join(' ');
@@ -4091,7 +4140,7 @@ function planClaimHolds(rec, claim){
   return false;
 }
 
-// The loaded game as validation sees it, built on a throwaway chess.js
+// The loaded game as the plan code sees it, built on a throwaway chess.js
 // instance: `game` itself is only read. The selectable plies are the
 // timeline's (max(historyPointer, importedLimit)), as for a sequence range.
 function planGameFacts(){
@@ -4104,17 +4153,30 @@ function planGameFacts(){
     while(probe.undo()){}
   } else if(!probe.load(game.fen())) throw new Error('the live position could not be re-read');
   if(probe.history().length !== 0) throw new Error('the start position could not be reconstructed');
-  const start = probe.fen();
+  const start = probe.fen(), uci = [];
   for(let p = 1; p <= visible; p++){
     const rec = moveHistory[p - 1];
     const m = rec ? probe.move({ from: rec.from, to: rec.to, promotion: rec.promotion || undefined }) : null;
     if(!m || m.san !== rec.san) throw new Error(`the move records disagree with chess.js at ply ${p}`);
+    uci.push(m.from + m.to + (m.promotion || ''));
   }
-  return { visible, start, final: probe.fen() };
+  return { visible, start, final: probe.fen(), uci };
+}
+// The canonical text the fingerprint is the SHA-256 of (see the header).
+function planCanonicalGame(facts){
+  return [PLAN_GAME_CANON_ID, planFen4(facts.start), String(facts.visible), facts.uci.join(' ')].join('\n');
+}
+async function planFingerprint(facts){
+  if(!(window.crypto && crypto.subtle && crypto.subtle.digest)) return null;
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(planCanonicalGame(facts)));
+  return 'sha256:' + Array.from(new Uint8Array(d), b => b.toString(16).padStart(2, '0')).join('');
 }
 
-function validateStoryPlan(text){
-  const out = { entries: [], checks: [], rows: [], summary: [], valid: false };
+// ctx (all optional): facts / factsError — the game as read before any await;
+// fingerprint — the loaded game's (null: could not be computed); forApply —
+// a missing fingerprint and what cannot be executed yet are errors, not warnings.
+function validateStoryPlan(text, ctx = {}){
+  const out = { entries: [], checks: [], rows: [], summary: [], valid: false, plan: null, facts: null };
   const add = (severity, code, path, message, hint) => out.entries.push({ severity, code, path, message, hint: hint || '' });
   const errorsUnder = (prefix) => out.entries.some(e => e.severity === 'error' && (e.path === prefix || e.path.startsWith(prefix + '/')));
   const check = (id, label, status, detail) => out.checks.push({ id, label, status, detail });
@@ -4122,10 +4184,13 @@ function validateStoryPlan(text){
     check('plies', 'Selectable ply count', 'not run', why);
     check('start', 'Start position', 'not run', why);
     check('final', 'Final position', 'not run', why);
+    check('fingerprint', 'Game fingerprint', 'not run', why);
     check('san', 'SAN of referenced plies', 'not run', why);
   };
   const ptr = (k) => '/' + String(k).replace(/~/g, '~0').replace(/\//g, '~1');
   const finish = () => { out.valid = !out.entries.some(e => e.severity === 'error'); return out; };
+  const notYet = (path, what) => add(ctx.forApply ? 'error' : 'warning', ctx.forApply ? 'E_NOT_EXECUTABLE' : 'W_NOT_EXECUTABLE', path,
+                                     `${what} is valid but not executed in this version.`, ctx.forApply ? 'Remove it to apply the plan.' : 'Apply will refuse it.');
 
   // 1. Size, JSON, schema id.
   const raw = String(text == null ? '' : text);
@@ -4140,6 +4205,7 @@ function validateStoryPlan(text){
     add('error', 'E_SCHEMA_VERSION', '/schema', planOwn(plan, 'schema') ? `Unsupported schema ${JSON.stringify(plan.schema)}.` : 'The "schema" field is missing.', `Use "schema": "${PLAN_SCHEMA_ID}".`);
     notRun('unsupported schema'); return finish();
   }
+  out.plan = plan;
 
   // 2. Structure.
   let fenProbe = null;
@@ -4149,7 +4215,7 @@ function validateStoryPlan(text){
     try { if(!fenProbe) fenProbe = new Chess(); return !!fenProbe.validate_fen(parts.length === 4 ? parts.join(' ') + ' 0 1' : parts.join(' ')).valid; } catch(e){ return false; }
   };
   function checkValue(f, v, path){
-    const kind = { string: 'a string', int: 'a whole number', bool: 'true or false', enum: 'a string', square: 'a square name', color: 'a colour string', fen: 'a FEN string', object: 'an object', array: 'an array' }[f.t];
+    const kind = { string: 'a string', int: 'a whole number', bool: 'true or false', enum: 'a string', square: 'a square name', color: 'a colour string', fen: 'a FEN string', fingerprint: 'a fingerprint string', object: 'an object', array: 'an array' }[f.t];
     const typeErr = () => add('error', 'E_TYPE', path, `Must be ${kind}.`, '');
     switch(f.t){
       case 'string':
@@ -4180,6 +4246,10 @@ function validateStoryPlan(text){
         if(typeof v !== 'string') return typeErr();
         if(!validFen(v)) add('error', 'E_VALUE_RANGE', path, 'Not a valid FEN (4 or 6 fields).', '');
         return;
+      case 'fingerprint':
+        if(typeof v !== 'string') return typeErr();
+        if(!/^sha256:[0-9a-f]{64}$/.test(v)) add('error', 'E_VALUE_RANGE', path, 'Not a game fingerprint ("sha256:" and 64 lowercase hex digits).', 'Copy it from "Copy game header".');
+        return;
       case 'object':
         if(!v || typeof v !== 'object' || Array.isArray(v)) return typeErr();
         return checkObject(f.of, v, path);
@@ -4204,7 +4274,7 @@ function validateStoryPlan(text){
       const p = path + ptr(key);
       if(planOwn(spec, key)) checkValue(spec[key], obj[key], p);
       else if(unsupported.includes(key) || key === 'optional')
-        add('error', 'E_UNSUPPORTED_COMMAND', p, `"${key}" is recognised but not supported in this version (Phase 4A validates the core commands only).`, key === 'optional' ? 'Unsupported commands cannot be skipped yet: remove them.' : 'Remove it: it belongs to a later phase.');
+        add('error', 'E_UNSUPPORTED_COMMAND', p, `"${key}" is recognised but not supported in this version.`, key === 'optional' ? 'Unsupported commands cannot be skipped yet: remove them.' : 'Remove it: it belongs to a later phase.');
       else add('error', 'E_UNKNOWN_FIELD', p, `Unknown field "${key}".`, 'Allowed here: ' + Object.keys(spec).join(', ') + '.');
     }
     for(const [key, f] of Object.entries(spec)) if(f.req && !planOwn(obj, key)) add('error', 'E_MISSING_FIELD', path + ptr(key), `Required field "${key}" is missing.`, '');
@@ -4216,10 +4286,14 @@ function validateStoryPlan(text){
   // 3. Game binding (needs a well-formed `game`).
   if(errorsUnder('/game')){ notRun('the "game" section has errors'); return finish(); }
   if(typeof Chess !== 'function'){ add('error', 'E_INTERNAL', '/game', 'The chess engine is not loaded, so the game cannot be checked.', 'Reload the page.'); notRun('chess engine not loaded'); return finish(); }
-  let facts;
-  try { facts = planGameFacts(); }
-  catch(e){ add('error', 'E_INTERNAL', '/game', 'The loaded game could not be checked: ' + e.message + '.', 'Reload the game and try again.'); notRun('the loaded game could not be read'); return finish(); }
+  let facts = ctx.facts;
+  if(ctx.factsError) { add('error', 'E_INTERNAL', '/game', 'The loaded game could not be checked: ' + ctx.factsError + '.', 'Reload the game and try again.'); notRun('the loaded game could not be read'); return finish(); }
+  if(!facts){
+    try { facts = planGameFacts(); }
+    catch(e){ add('error', 'E_INTERNAL', '/game', 'The loaded game could not be checked: ' + e.message + '.', 'Reload the game and try again.'); notRun('the loaded game could not be read'); return finish(); }
+  }
   if(!facts.visible){ add('error', 'E_NO_GAME', '/game', 'No game is loaded.', 'Import the PGN the plan was written for, then validate.'); notRun('no game loaded'); return finish(); }
+  out.facts = facts;
   const g = plan.game, isStdStart = planFen4(facts.start) === PLAN_STANDARD_START;
   if(g.plies === facts.visible) check('plies', 'Selectable ply count', 'passed', `${facts.visible}`);
   else { check('plies', 'Selectable ply count', 'failed', `plan ${g.plies}, game ${facts.visible}`); add('error', 'E_GAME_MISMATCH', '/game/plies', `The plan is for ${g.plies} plies; the loaded game has ${facts.visible}.`, 'Load the game the plan was written for, or correct "plies".'); }
@@ -4232,6 +4306,12 @@ function validateStoryPlan(text){
     if(planFen4(g.final_fen) === planFen4(facts.final)) check('final', 'Final position', 'passed', planFen4(facts.final));
     else { check('final', 'Final position', 'failed', `game ${planFen4(facts.final)}`); add('error', 'E_GAME_MISMATCH', '/game/final_fen', `After ply ${facts.visible} the loaded game shows ${planFen4(facts.final)}, not ${planFen4(g.final_fen)}.`, 'Positions are compared on placement, side to move, castling and en passant.'); }
   } else { check('final', 'Final position', 'not checked', 'the plan gives no final_fen'); add('warning', 'W_FINAL_FEN_MISSING', '/game/final_fen', 'The plan gives no "final_fen", so the final position was not compared.', 'Add the FEN after the last ply.'); }
+  if(planOwn(g, 'fingerprint')){
+    if(!ctx.fingerprint){ check('fingerprint', 'Game fingerprint', 'not checked', 'it could not be computed'); add('error', 'E_INTERNAL', '/game/fingerprint', 'The game fingerprint could not be computed on this page (it needs a secure page: https or a local file).', ''); }
+    else if(g.fingerprint === ctx.fingerprint) check('fingerprint', 'Game fingerprint', 'passed', ctx.fingerprint);
+    else { check('fingerprint', 'Game fingerprint', 'failed', `game ${ctx.fingerprint}`); add('error', 'E_GAME_MISMATCH', '/game/fingerprint', 'The plan was written for another game (the fingerprints differ).', 'Use "Copy game header" on the game you mean, and give that to the AI.'); }
+  } else if(ctx.forApply){ check('fingerprint', 'Game fingerprint', 'failed', 'missing'); add('error', 'E_MISSING_FIELD', '/game/fingerprint', 'A plan needs the game fingerprint to be applied.', 'Use "Copy game header" and put its "fingerprint" in the plan\'s "game".'); }
+  else { check('fingerprint', 'Game fingerprint', 'not checked', 'the plan gives no fingerprint'); add('warning', 'W_FINGERPRINT_MISSING', '/game/fingerprint', 'The plan gives no "fingerprint", so it cannot be applied.', 'Use "Copy game header" and put its "fingerprint" in the plan\'s "game".'); }
 
   // 4. References (only when nothing above failed).
   if(!structureOk || errorsUnder('/game')){
@@ -4246,6 +4326,8 @@ function validateStoryPlan(text){
     else if(r.to_ply > facts.visible) add('error', 'E_RANGE_INVALID', '/range/to_ply', `Ply ${r.to_ply} is beyond the game (${facts.visible} plies).`, '');
     else range = r;
   }
+  const lastPly = range ? range.to_ply : facts.visible;
+  const endingHold = !!(plan.ending && planOwn(plan.ending, 'hold_ms'));
   const moves = plan.moves || [], seen = new Map();
   let sanChecked = 0, sanFailed = 0;
   moves.forEach((d, i) => {
@@ -4260,11 +4342,14 @@ function validateStoryPlan(text){
     (d.claims || []).forEach((c, j) => { if(planClaimHolds(rec, c)) claimsOk.push(c); else add('error', 'E_CLAIM_MISMATCH', p + '/claims/' + j, `${rec.san} (ply ${d.ply}) is not a ${c.replace('_', ' ')}.`, 'Claims are checked against chess.js.'); });
     const fr = d.frame || {}, targets = fr.targets || [];
     if(fr.mode === 'full' && targets.length) add('error', 'E_CONFLICT', p + '/frame', 'A full-board frame cannot also have targets.', 'Use "close" (or no mode) with targets, or drop the targets.');
+    if(fr.mode === 'close' || fr.mode === 'full') notYet(p + '/frame/mode', `frame.mode "${fr.mode}"`);
+    if(endingHold && d.ply === lastPly && planOwn(d, 'hold_ms')) add('error', 'E_CONFLICT', p + '/hold_ms', `Ply ${d.ply} is the last ply of the sequence, and "ending.hold_ms" already sets its hold.`, 'Give the final hold in one place only.');
     const inRange = !range || (d.ply >= range.from_ply && d.ply <= range.to_ply);
     if(!inRange) add('warning', 'W_OUTSIDE_RANGE', p, `Ply ${d.ply} is outside the range ${range.from_ply}–${range.to_ply}; this directive would be ignored.`, '');
     out.rows.push({ ply: d.ply, label: plyLabel(rec), cls: moveClass(rec), inRange, claims: claimsOk, hold: d.hold_ms, mode: fr.mode || 'default', targets,
                     highlights: ((d.marks && d.marks.highlights) || []).map(h => h.sq), arrows: ((d.marks && d.marks.arrows) || []).map(a => a.from + '→' + a.to) });
   });
+  if(plan.ending && plan.ending.return_to_full === true) notYet('/ending/return_to_full', 'ending.return_to_full: true');
   if(!moves.length){ check('san', 'SAN of referenced plies', 'not checked', 'the plan references no ply'); add('warning', 'W_NO_MOVE_REFERENCES', '/moves', 'The plan references no ply, so no move text was compared with the game.', 'Reference at least the plies the plan is about.'); }
   else if(!sanChecked) check('san', 'SAN of referenced plies', 'not checked', 'no referenced ply is in the game');
   else check('san', 'SAN of referenced plies', sanFailed ? 'failed' : 'passed', `${sanChecked - sanFailed} of ${sanChecked} referenced plies match; the ${facts.visible - sanChecked} others are not compared one by one`);
@@ -4272,50 +4357,154 @@ function validateStoryPlan(text){
   out.summary = [
     `Game: ${facts.visible} plies, ${isStdStart ? 'standard start' : 'set-up start'}.`,
     `Range: ${range ? `plies ${range.from_ply}–${range.to_ply}` : 'whole game'}.`,
-    `Automatic close framing: ${plan.defaults && planOwn(plan.defaults, 'auto_frame') ? (plan.defaults.auto_frame ? 'on' : 'off') : 'off (default)'} — requested, not applied.`,
-    `Ending: ${plan.ending ? [planOwn(plan.ending, 'hold_ms') ? `hold ${plan.ending.hold_ms} ms` : '', planOwn(plan.ending, 'return_to_full') ? `return to full board: ${plan.ending.return_to_full ? 'yes' : 'no'}` : ''].filter(Boolean).join(', ') || 'default' : 'default'} — requested, not applied.`,
+    `Automatic close framing: ${plan.defaults && planOwn(plan.defaults, 'auto_frame') ? (plan.defaults.auto_frame ? 'on' : 'off') : 'off (default)'}.`,
+    `Ending: ${plan.ending ? [planOwn(plan.ending, 'hold_ms') ? `hold ${plan.ending.hold_ms} ms` : '', planOwn(plan.ending, 'return_to_full') ? `return to full board: ${plan.ending.return_to_full ? 'yes' : 'no'}` : ''].filter(Boolean).join(', ') || 'default' : 'default'}.`,
     `Analysis source: ${plan.analysis && plan.analysis.source ? plan.analysis.source : 'not given'}.`
   ];
   return finish();
+}
+
+// ---- compile (Phase 4B.1) ----
+// The execution representation of a VALID plan for the loaded game: frozen
+// copies of the range's move records carrying only the plan's marks, the
+// framing setting and the hold requests. Pure: reads moveHistory, writes
+// nothing. Highlights and arrows are built exactly as the board's own
+// annotation tools build them (same fields, same default colours).
+function compileStoryPlan(plan, facts, fingerprint){
+  const from = plan.range ? plan.range.from_ply : 1, to = plan.range ? plan.range.to_ply : facts.visible;
+  const byDirective = new Map();
+  for(const d of plan.moves || []) if(d.ply >= from && d.ply <= to) byDirective.set(d.ply, d);
+  const records = [], byPly = new Map(), moveMs = {};
+  for(let p = from; p <= to; p++){
+    const rec = moveHistory[p - 1], d = byDirective.get(p), marks = (d && d.marks) || {};
+    const eff = Object.assign({}, rec, {
+      arrows: Object.freeze((marks.arrows || []).map(a => Object.freeze({ from: a.from, to: a.to, color: a.color || ANNOTATION_DEFAULT_COLORS.arrow }))),
+      highlights: Object.freeze((marks.highlights || []).map(h => Object.freeze({ file: 'abcdefgh'.indexOf(h.sq[0]), rank: 8 - parseInt(h.sq[1], 10), sq: h.sq, color: hexToRgba(h.color || ANNOTATION_DEFAULT_COLORS.highlight, 1), alpha: 0.28 }))),
+      storyTargets: Object.freeze(((d && d.frame && d.frame.targets) || []).slice()),
+      annotation: '', badge: ''
+    });
+    Object.freeze(eff);
+    records.push(eff); byPly.set(p, eff);
+    if(d && planOwn(d, 'hold_ms')) moveMs[p] = d.hold_ms;
+  }
+  const finalMs = plan.ending && planOwn(plan.ending, 'hold_ms') ? plan.ending.hold_ms : null;
+  return Object.freeze({
+    fingerprint, key: planGameKey(), range: Object.freeze({ from, to }),
+    autoFrame: !!(plan.defaults && plan.defaults.auto_frame),
+    records: Object.freeze(records), byPly,
+    holds: Object.freeze({ moveMs: Object.freeze(moveMs), finalMs })
+  });
+}
+// The compiled plan, checked before it may be activated: every effective
+// record is the loaded game's move at its ply (only its marks differ), every
+// mark is on the board, the timeline can be built, and the user's own records
+// were not touched. Returns [{severity, code, path, message}].
+function checkCompiledStoryPlan(c, marksBefore){
+  const out = [], bad = (m) => out.push({ severity: 'error', code: 'E_INTERNAL', path: '', message: 'The compiled plan failed its check: ' + m + '.', hint: '' });
+  if(c.records.length !== c.range.to - c.range.from + 1) bad('wrong number of moves');
+  c.records.forEach((r, i) => {
+    const src = moveHistory[c.range.from + i - 1];
+    if(!src || r.ply !== src.ply || r.from !== src.from || r.to !== src.to || r.san !== src.san || r.preSnapshot !== src.preSnapshot) bad(`ply ${c.range.from + i} is not the game's move`);
+    for(const sq of [...r.storyTargets, ...r.highlights.map(h => h.sq), ...r.arrows.flatMap(a => [a.from, a.to])]) if(!/^[a-h][1-8]$/.test(sq)) bad(`a mark is off the board at ply ${r.ply}`);
+  });
+  if(planUserMarks() !== marksBefore) bad('the user\'s annotations changed');
+  let tl = null;
+  try { tl = sequencePlan(c.records, EXPORT_FPS, captureEffect, c.autoFrame, c.holds); } catch(e){ bad('its timeline could not be built (' + e.message + ')'); }
+  if(tl && !(tl.totalFrames > 0 && tl.moves.length === c.records.length)) bad('its timeline is empty');
+  return { errors: out, timeline: tl };
+}
+// The user's own annotations, as text (for the check above and the tests).
+function planUserMarks(){
+  return JSON.stringify(moveHistory.map(r => [r.arrows, r.highlights, r.storyTargets, r.annotation, r.badge]));
+}
+
+// ---- the active plan ----
+let activeStoryPlan = null;
+function planGameKey(){
+  const n = Math.max(historyPointer, importedLimit);
+  return { list: moveHistory, n, first: moveHistory[0] || null, last: moveHistory[n - 1] || null };
+}
+const planKeysEqual = (a, b) => a.list === b.list && a.n === b.n && a.first === b.first && a.last === b.last;
+// The active plan, if it is still bound to the loaded game.
+function storyPlanBound(){
+  return activeStoryPlan && planKeysEqual(activeStoryPlan.key, planGameKey()) ? activeStoryPlan : null;
+}
+// A changed game deactivates the plan (called first thing in updateHistory()
+// and before playback/export start).
+// Returns true when it has just deactivated the plan (playback and export
+// then stop rather than fall back to the manual sequence unannounced).
+function checkStoryPlanBinding(){
+  if(activeStoryPlan && !storyPlanBound()){
+    activeStoryPlan = null;
+    planTimelineShown = null;
+    // After the action that changed the game (an import, say) has shown its
+    // own message, so this one is not overwritten; the panel keeps it too.
+    setTimeout(() => showMessage('The loaded game changed, so the story plan was deactivated.', 'error', 5000), 0);
+    renderPlanActive('The loaded game changed, so the story plan was deactivated.');
+    return true;
+  }
+  return false;
+}
+// What the sequence plays and exports: the active plan's, or the user's own.
+function sequenceInputs(){
+  if(activeStoryPlan){
+    const p = storyPlanBound();
+    if(!p) return { error: 'The loaded game changed, so the story plan was deactivated.' };
+    return { records: p.records, from: p.range.from, to: p.range.to, autoFrame: p.autoFrame, holds: p.holds, fromPlan: true };
+  }
+  const r = sequenceRange();
+  if(r.error) return r;
+  return { records: r.records, from: r.from, to: r.to, autoFrame: autoFrameEvents, holds: null, fromPlan: false };
+}
+// The record whose marks the board shows: with a plan active, the plan's
+// version of that ply (outside its range: no marks).
+function storyPlanDisplayRecord(rec){
+  const p = storyPlanBound();
+  if(!p || !rec) return rec;
+  return p.byPly.get(rec.ply) || Object.freeze(Object.assign({}, rec, { arrows: [], highlights: [], storyTargets: [], annotation: '', badge: '' }));
+}
+function storyPlanBlocksEditing(){
+  if(!storyPlanBound()) return false;
+  showMessage('A story plan is active: deactivate it to edit annotations.', 'error');
+  return true;
+}
+function storyPlanBlocksSingleMove(){
+  if(!storyPlanBound()) return false;
+  showMessage('A story plan is active: use Play Sequence / Export Sequence, or deactivate the plan.', 'error');
+  return true;
 }
 
 // ---- panel ----
 // The report on show and the game it was made for (by identity: a new
 // import, Reset, a new move or an undo that changes the selectable plies
 // makes it stale; selecting a move or flipping the board does not).
-let planReportShown = null;
-function planGameKey(){
-  const n = Math.max(historyPointer, importedLimit);
-  return { list: moveHistory, n, first: moveHistory[0] || null, last: moveHistory[n - 1] || null };
-}
+let planReportShown = null, planBusy = false, planTimelineShown = null;
 function markPlanReportStale(){
   try {
     if(!planReportShown) return;
-    const k = planGameKey(), was = planReportShown.key;
-    if(k.list !== was.list || k.n !== was.n || k.first !== was.first || k.last !== was.last)
-      document.getElementById('planPanel').dataset.stale = '1';
+    if(!planKeysEqual(planGameKey(), planReportShown.key)) document.getElementById('planPanel').dataset.stale = '1';
   } catch(e){ console.error('Story plan: stale check failed:', e); }
 }
 function planReportText(res){
   const errs = res.entries.filter(e => e.severity === 'error').length, warns = res.entries.length - errs;
-  const lines = [`Chess Cinema plan validation (${PLAN_SCHEMA_ID}): ` + (errs ? `INVALID — ${errs} error${errs === 1 ? '' : 's'}` : 'no errors') + `, ${warns} warning${warns === 1 ? '' : 's'}.`];
+  const lines = [`Chess Cinema plan ${res.forApply ? 'apply' : 'validation'} (${PLAN_SCHEMA_ID}): ` + (errs ? `INVALID — ${errs} error${errs === 1 ? '' : 's'}` : (res.applied ? 'APPLIED' : 'no errors')) + `, ${warns} warning${warns === 1 ? '' : 's'}.`];
   for(const e of res.entries) lines.push(`${e.severity.toUpperCase()} ${e.code} at ${e.path || '(document)'}: ${e.message}${e.hint ? ' ' + e.hint : ''}`);
-  lines.push('Game checks (evidence, not proof, that the plan is for this game):');
+  lines.push('Game checks (ply count, positions and SAN are evidence, not proof, that the plan is for this game; the fingerprint covers every move):');
   for(const c of res.checks) lines.push(`- ${c.label}: ${c.status}${c.detail ? ' (' + c.detail + ')' : ''}`);
   if(res.valid){
     lines.push(...res.summary);
-    for(const r of res.rows) lines.push(planRowText(r));
+    for(const r of res.rows) lines.push(planRowText(r, res.applied));
   }
   return lines.join('\n');
 }
-function planRowText(r){
+function planRowText(r, applied){
   const parts = [`Ply ${r.ply} · ${r.label} · ${r.cls}${r.inRange ? '' : ' · outside range'}`];
   if(r.claims.length) parts.push('claims verified: ' + r.claims.join(', '));
   if(r.hold !== undefined) parts.push(`hold ${r.hold} ms`);
   parts.push('frame ' + r.mode + (r.targets.length ? ' [' + r.targets.join(' ') + ']' : ''));
   if(r.highlights.length) parts.push('highlights ' + r.highlights.join(' '));
   if(r.arrows.length) parts.push('arrows ' + r.arrows.join(' '));
-  return parts.join(' · ') + ' — requested, not applied (Phase 4A).';
+  return parts.join(' · ') + (applied ? (r.inRange ? ' — applied.' : ' — ignored (outside the range).') : ' — requested, not applied.');
 }
 function renderPlanReport(res){
   const panel = document.getElementById('planPanel'), rep = document.getElementById('planReport');
@@ -4328,11 +4517,13 @@ function renderPlanReport(res){
     document.getElementById('copyPlanReport').disabled = true;
     return;
   }
-  panel.dataset.result = res.valid ? 'valid' : 'invalid';
-  const errs = res.entries.filter(e => e.severity === 'error').length;
+  panel.dataset.result = res.valid ? (res.applied ? 'applied' : 'valid') : 'invalid';
+  const errs = res.entries.filter(e => e.severity === 'error').length, warns = res.entries.length - errs;
   const head = document.createElement('div');
   head.className = errs ? 'plan-error' : '';
-  head.textContent = errs ? `Invalid: ${errs} error${errs === 1 ? '' : 's'}, ${res.entries.length - errs} warning${res.entries.length - errs === 1 ? '' : 's'}. Nothing was applied.` : `Valid: no errors, ${res.entries.length} warning${res.entries.length === 1 ? '' : 's'}. Nothing is applied in this version.`;
+  head.textContent = errs ? `Invalid: ${errs} error${errs === 1 ? '' : 's'}, ${warns} warning${warns === 1 ? '' : 's'}. Nothing was applied${res.forApply && activeStoryPlan ? '; the plan already active stays active' : ''}.`
+                          : res.applied ? `Applied: ${warns} warning${warns === 1 ? '' : 's'}. Play Sequence and Export Sequence now follow this plan.`
+                          : `Valid: no errors, ${warns} warning${warns === 1 ? '' : 's'}. Press Apply to use it.`;
   rep.appendChild(head);
   if(res.entries.length){
     const ul = document.createElement('ul');
@@ -4353,44 +4544,193 @@ function renderPlanReport(res){
   }
   if(res.checks.length){
     const li = document.createElement('li');
-    li.textContent = 'These checks are evidence, not proof, that the plan was written for this game.';
+    li.textContent = 'Ply count, positions and SAN are evidence, not proof, that the plan was written for this game; the fingerprint covers every move.';
     checks.appendChild(li);
   }
   if(res.valid){
     for(const line of res.summary){ const d = document.createElement('div'); d.textContent = line; insp.appendChild(d); }
-    for(const r of res.rows){ const d = document.createElement('div'); d.className = 'plan-row'; d.dataset.ply = String(r.ply); d.textContent = planRowText(r); insp.appendChild(d); }
+    for(const r of res.rows){ const d = document.createElement('div'); d.className = 'plan-row'; d.dataset.ply = String(r.ply); d.textContent = planRowText(r, res.applied); insp.appendChild(d); }
   }
   txt.value = planReportText(res); txt.style.display = '';
   document.getElementById('copyPlanReport').disabled = false;
 }
-document.getElementById('validatePlan').addEventListener('click', ()=>{
-  if(sequencePlayback.state !== 'idle'){ showMessage('Stop the sequence first.', 'error'); return; }
-  if(exportInProgress){ showMessage('Wait for the export to finish.', 'error'); return; }
-  let res;
-  try { res = validateStoryPlan(document.getElementById('planInput').value); }
-  catch(e){
-    console.error('Story plan validation failed:', e);
-    res = { entries: [{ severity: 'error', code: 'E_INTERNAL', path: '', message: 'Validation stopped unexpectedly: ' + e.message, hint: '' }], checks: [], rows: [], summary: [], valid: false };
+// The active plan's status line and its timeline (start, landing, end and
+// hold of every move, as playback and export will use them).
+function renderPlanActive(note){
+  const panel = document.getElementById('planPanel'), st = document.getElementById('planActiveStatus');
+  const p = storyPlanBound();
+  if(p){
+    panel.dataset.active = '1';
+    st.textContent = `Plan active: plies ${p.range.from}–${p.range.to}, automatic close framing ${p.autoFrame ? 'on' : 'off'}, game ${p.fingerprint.slice(0, 19)}…`;
+  } else {
+    delete panel.dataset.active;
+    st.textContent = note || 'No plan is active.';
   }
+  document.getElementById('deactivatePlan').disabled = !p;
+  renderPlanTimelineIfChanged();
+}
+function renderPlanTimelineIfChanged(){
+  const p = storyPlanBound(), box = document.getElementById('planTimeline');
+  const want = p ? { plan: p, fx: captureEffect } : null;
+  if(planTimelineShown && want && planTimelineShown.plan === want.plan && planTimelineShown.fx === want.fx) return;
+  if(!planTimelineShown && !want && !box.childNodes.length) return;
+  planTimelineShown = want;
+  box.textContent = '';
+  if(!p) return;
+  const tl = sequencePlan(p.records, EXPORT_FPS, captureEffect, p.autoFrame, p.holds);
+  const head = document.createElement('div');
+  head.textContent = `Timeline of the active plan: ${(tl.durationMs / 1000).toFixed(2)} s, ${tl.totalFrames} frames (Capture FX: ${captureEffect}).`;
+  box.appendChild(head);
+  tl.moves.forEach((m, i) => {
+    const r = m.rec, last = i === tl.moves.length - 1;
+    const req = last && p.holds.finalMs != null ? p.holds.finalMs : p.holds.moveMs[r.ply];
+    const d = document.createElement('div');
+    d.className = 'plan-row';
+    d.dataset.ply = String(r.ply); d.dataset.start = String(m.start); d.dataset.land = String(m.land); d.dataset.end = String(m.end);
+    d.dataset.holdMs = String(m.holdMs); d.dataset.auto = m.auto ? '1' : '0';
+    const marks = [r.storyTargets.length ? 'targets ' + r.storyTargets.join(' ') : '', r.highlights.length ? 'highlights ' + r.highlights.map(h => h.sq).join(' ') : '', r.arrows.length ? 'arrows ' + r.arrows.map(a => a.from + '→' + a.to).join(' ') : ''].filter(Boolean).join(', ');
+    d.textContent = `Ply ${r.ply} · ${plyLabel(r)} · starts ${(m.start / EXPORT_FPS / 1000).toFixed(3)} s · lands ${(m.land / EXPORT_FPS / 1000).toFixed(3)} s · hold ${Math.round(m.holdMs)} ms` +
+                    (req != null ? (Math.round(m.holdMs) > req ? ` (requested ${req} ms, raised by the move's own minimum)` : ` (requested ${req} ms)`) : ' (default)') +
+                    (m.auto ? ' · automatic close-up' : '') + (marks ? ' · ' + marks : '');
+    box.appendChild(d);
+  });
+}
+function planBump(){ const p = document.getElementById('planPanel'); p.dataset.seq = String((parseInt(p.dataset.seq || '0', 10) || 0) + 1); }
+function planRefusedNow(){
+  if(planBusy){ showMessage('The story plan is still being checked.', 'error'); return true; }
+  if(sequencePlayback.state !== 'idle'){ showMessage('Stop the sequence first.', 'error'); return true; }
+  if(exportInProgress){ showMessage('Wait for the export to finish.', 'error'); return true; }
+  return false;
+}
+// Validate (forApply false) or Apply (true): reads the game, computes its
+// fingerprint (the only asynchronous step), then — if the game, playback and
+// export are as they were — validates, and for Apply compiles, checks and
+// activates, all synchronously.
+async function runStoryPlan(forApply){
+  if(planRefusedNow()) return;
+  planBusy = true;
+  const text = document.getElementById('planInput').value;
+  const key = planGameKey();
+  let res = null;
+  try {
+    let facts = null, factsError = null, fingerprint = null;
+    if(typeof Chess === 'function'){
+      try { facts = planGameFacts(); } catch(e){ factsError = e.message; }
+    }
+    if(facts && facts.visible){
+      try { fingerprint = await planFingerprint(facts); } catch(e){ fingerprint = null; }
+    }
+    if(!planKeysEqual(key, planGameKey()) || sequencePlayback.state !== 'idle' || exportInProgress){
+      res = { entries: [{ severity: 'error', code: 'E_INTERNAL', path: '', message: 'The game, playback or an export changed while the plan was being checked. Nothing was applied.', hint: 'Try again.' }], checks: [], rows: [], summary: [], valid: false };
+    } else {
+      res = validateStoryPlan(text, { facts, factsError, fingerprint, forApply });
+      if(forApply && res.valid){
+        const marksBefore = planUserMarks();
+        const compiled = compileStoryPlan(res.plan, res.facts, fingerprint);
+        const checked = checkCompiledStoryPlan(compiled, marksBefore);
+        if(checked.errors.length){ res.entries.push(...checked.errors); res.valid = false; }
+        else {
+          // Holds raised by a move's own minimum (with the current Capture FX), and
+          // a sequence too long to export (it can still be played), are reported.
+          checked.timeline.moves.forEach((m, i) => {
+            const last = i === checked.timeline.moves.length - 1, r = m.rec;
+            const req = last && compiled.holds.finalMs != null ? compiled.holds.finalMs : compiled.holds.moveMs[r.ply];
+            if(req != null && Math.round(m.holdMs) > req){
+              const idx = (res.plan.moves || []).findIndex(d => d.ply === r.ply);
+              const path = last && compiled.holds.finalMs != null ? '/ending/hold_ms' : `/moves/${idx}/hold_ms`;
+              res.entries.push({ severity: 'warning', code: 'W_HOLD_RAISED', path, message: `Ply ${r.ply} holds ${Math.round(m.holdMs)} ms, not ${req} ms: that is the move's own minimum (camera hold or capture effect).`, hint: 'With the current Capture FX setting.' });
+            }
+          });
+          if(checked.timeline.totalFrames > MAX_EXPORT_FRAMES)
+            res.entries.push({ severity: 'warning', code: 'W_TOO_LONG', path: '/range', message: `The sequence makes ${checked.timeline.totalFrames} frames: it can be played but not exported (limit ${MAX_EXPORT_FRAMES}).`, hint: '' });
+          // Activation: one assignment. If refreshing the page around it fails,
+          // the previous plan is put back.
+          const previous = activeStoryPlan;
+          activeStoryPlan = compiled;
+          try { planTimelineShown = null; updateHistory(); redrawOverlay(); renderPlanActive(); res.applied = true; }
+          catch(e){
+            activeStoryPlan = previous; planTimelineShown = null;
+            try { updateHistory(); redrawOverlay(); renderPlanActive(); } catch(e2){}
+            res.entries.push({ severity: 'error', code: 'E_INTERNAL', path: '', message: 'The plan could not be activated: ' + e.message + '. The previous state was kept.', hint: '' });
+            res.valid = false;
+          }
+        }
+      }
+    }
+  } catch(e){
+    console.error('Story plan check failed:', e);
+    res = { entries: [{ severity: 'error', code: 'E_INTERNAL', path: '', message: 'The check stopped unexpectedly: ' + e.message, hint: '' }], checks: [], rows: [], summary: [], valid: false };
+  } finally {
+    planBusy = false;
+  }
+  res.forApply = forApply;
   planReportShown = { key: planGameKey() };
   renderPlanReport(res);
+  if(res.applied) showMessage('Story plan applied.', 'success');
+  planBump();
+}
+function deactivateStoryPlan(note){
+  activeStoryPlan = null; planTimelineShown = null;
+  updateHistory(); redrawOverlay(); renderPlanActive(note);
+}
+document.getElementById('validatePlan').addEventListener('click', ()=>{ runStoryPlan(false); });
+document.getElementById('applyPlan').addEventListener('click', ()=>{ runStoryPlan(true); });
+document.getElementById('deactivatePlan').addEventListener('click', ()=>{
+  if(planRefusedNow()) return;
+  if(!activeStoryPlan) return;
+  deactivateStoryPlan('The plan was deactivated: your own range, setting and annotations are back.');
+  const panel = document.getElementById('planPanel');
+  if(panel.dataset.result === 'applied') panel.dataset.result = 'valid';
+  showMessage('Story plan deactivated.', 'success');
+  planBump();
 });
 document.getElementById('clearPlan').addEventListener('click', ()=>{
+  if(planRefusedNow()) return;
+  if(activeStoryPlan) deactivateStoryPlan();
   document.getElementById('planInput').value = '';
   planReportShown = null;
   renderPlanReport(null);
+  const gh = document.getElementById('gameHeaderText'); gh.value = ''; gh.style.display = 'none';
+  planBump();
 });
-document.getElementById('copyPlanReport').addEventListener('click', ()=>{
-  const txt = document.getElementById('planReportText');
-  if(!txt.value) return;
+function planCopy(textarea, what){
   const fallback = () => {
-    try { txt.select(); if(document.execCommand('copy')) { showMessage('Report copied.', 'success'); return; } } catch(e){}
-    showMessage('Copy failed: select the report text and copy it by hand.', 'error');
+    try { textarea.select(); if(document.execCommand('copy')) { showMessage(what + ' copied.', 'success'); return; } } catch(e){}
+    showMessage('Copy failed: select the text and copy it by hand.', 'error');
   };
   try {
-    if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt.value).then(() => showMessage('Report copied.', 'success'), fallback);
+    if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(textarea.value).then(() => showMessage(what + ' copied.', 'success'), fallback);
     else fallback();
   } catch(e){ fallback(); }
+}
+document.getElementById('copyPlanReport').addEventListener('click', ()=>{
+  const txt = document.getElementById('planReportText');
+  if(txt.value) planCopy(txt, 'Report');
+});
+// The plan's `game` block for the loaded game, fingerprint included.
+document.getElementById('copyGameHeader').addEventListener('click', async ()=>{
+  if(planBusy) { showMessage('The story plan is still being checked.', 'error'); return; }
+  const gh = document.getElementById('gameHeaderText');
+  planBusy = true;
+  try {
+    if(typeof Chess !== 'function'){ showMessage('Chess engine not loaded yet.', 'error'); return; }
+    const facts = planGameFacts();
+    if(!facts.visible){ showMessage('Import or play a game first.', 'error'); return; }
+    const fingerprint = await planFingerprint(facts);
+    if(!fingerprint){ showMessage('The game fingerprint needs a secure page (https or a local file).', 'error'); return; }
+    const header = { plies: facts.visible };
+    if(planFen4(facts.start) !== PLAN_STANDARD_START) header.start_fen = facts.start;
+    header.final_fen = facts.final;
+    header.fingerprint = fingerprint;
+    gh.value = JSON.stringify(header, null, 2); gh.style.display = '';
+    planCopy(gh, 'Game header');
+  } catch(e){
+    console.error('Game header failed:', e);
+    showMessage('The game header could not be made: ' + e.message, 'error');
+  } finally {
+    planBusy = false;
+    planBump();
+  }
 });
 
 /* ---------------- INIT ---------------- */
