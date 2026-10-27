@@ -115,6 +115,18 @@ button:active, button.active {
 .quickstart ol{margin:8px 0 2px;padding-left:20px;line-height:1.5}
 .quickstart li{margin-bottom:4px}
 .quickstart b{color:var(--light-text);font-weight:600}
+/* Story plan panel (Phase 4A, validation only). Long paths and plan strings
+   wrap instead of widening the 360px panel. */
+.plan-panel{margin-top:8px}
+.plan-panel summary{cursor:pointer}
+.plan-panel ul{margin:4px 0;padding-left:18px}
+.plan-panel li,.plan-panel div{overflow-wrap:anywhere}
+.plan-panel .plan-error{color:#ff9e8f}
+.plan-panel .plan-warning{color:#ffd58a}
+.plan-panel .plan-row{margin:4px 0;padding-top:4px;border-top:1px dashed rgba(255,255,255,0.06)}
+#planStale{display:none;color:#ffd58a;margin:4px 0}
+#planPanel[data-stale="1"] #planStale{display:block}
+#planPanel[data-stale="1"] #planReport,#planPanel[data-stale="1"] #planChecks,#planPanel[data-stale="1"] #planInspector{opacity:0.55}
 /* The shared 8px control padding squashed the colour well to a grey sliver,
    so the chosen annotation colour was never visible. Scoped to #color only. */
 #color{padding:2px;width:44px;height:34px;box-sizing:border-box;cursor:pointer}
@@ -345,6 +357,25 @@ button:active, button.active {
             <button id="cancelExport" disabled>Cancel Export</button>
           </div>
         </div>
+        <!-- Story plan (Phase 4A): a JSON plan written by an external AI is
+             checked against the loaded game and reported. Validation only:
+             there is no Apply, nothing in the plan is used by playback, the
+             camera, timing or export. -->
+        <details class="plan-panel" id="planPanel">
+          <summary class="small">Story plan (JSON) — validation only</summary>
+          <div class="small" style="margin:4px 0;">Paste a plan (schema <code>chess-cinema-plan/1</code>) and press Validate. It is checked against the loaded game; nothing in it is applied yet.</div>
+          <textarea id="planInput" spellcheck="false" placeholder='{"schema": "chess-cinema-plan/1", "game": {...}, "moves": [...]}' style="width:100%;box-sizing:border-box;height:90px;font-family:monospace;font-size:12px;"></textarea>
+          <div class="row controls-flex" style="margin-top:4px;">
+            <button id="validatePlan">Validate</button>
+            <button id="clearPlan">Clear</button>
+            <button id="copyPlanReport" disabled>Copy report</button>
+          </div>
+          <div class="small" id="planStale">The loaded game changed after this report was made: validate again.</div>
+          <div class="small" id="planReport"></div>
+          <ul class="small" id="planChecks"></ul>
+          <div class="small" id="planInspector"></div>
+          <textarea id="planReportText" readonly aria-label="Plan validation report (text)" style="display:none;width:100%;box-sizing:border-box;height:90px;font-family:monospace;font-size:12px;"></textarea>
+        </details>
         <div class="row" style="flex-wrap:wrap;">
           <label class="small">Classification</label>
           <!-- One control: picking the classification also sets its
@@ -2571,6 +2602,7 @@ function updateHistory(){
   activeArrows.forEach((a,i)=>{ const d=document.createElement('div'); d.style.padding='6px'; d.style.borderBottom='1px solid rgba(255,255,255,0.03)'; d.innerHTML=`Arrow ${i+1}: ${a.from} → ${a.to} <button data-i='${i}' style="padding: 2px 5px; font-size: 10px; float: right;">X</button>`; el.appendChild(d); });
   activeHighlights.forEach((h,i)=>{ const d=document.createElement('div'); d.style.padding='6px'; d.style.borderBottom='1px solid rgba(255,255,255,0.03)'; d.innerHTML=`Highlight ${i+1}: ${h.sq} <button data-i='h${i}' style="padding: 2px 5px; font-size: 10px; float: right;">X</button>`; el.appendChild(d); });
   el.querySelectorAll('button').forEach(b=>{ b.onclick=()=>{ const id=b.dataset.i; const rec2=getActiveRecord(); if(!rec2) return; if(id.startsWith('h')){ rec2.highlights.splice(parseInt(id.slice(1)),1); } else { rec2.arrows.splice(parseInt(id),1); } redrawOverlay(); updateHistory(); }; });
+  markPlanReportStale();   // Phase 4A: a shown plan report no longer describes a changed game
 }
 
 /* hotkeys (Original) */
@@ -3982,6 +4014,384 @@ function exportMovesAsWebM(records, opts={fps:EXPORT_FPS}){
     endExport();
   }
 }
+
+/* ---------------- STORY PLAN: VALIDATION ONLY (Phase 4A) ----------------
+   A plan written by an external AI (schema chess-cinema-plan/1; see
+   docs/chess-cinema/phase4-5-requirements.md on the docs branch) is checked
+   against the loaded game and reported, with an inspector of what it asks
+   for. Nothing in it is applied: there is no Apply in this phase, so
+   playback, timing, camera, marks and export never read it.
+
+   Validation only READS the game — the move records, historyPointer,
+   importedLimit, game.fen()/game.pgn() — and replays it on a throwaway
+   chess.js instance. It writes nothing but this panel.
+
+   Stages, in order (each reports every problem it finds):
+     1. size, JSON, top-level object, schema id   (any error stops here)
+     2. structure: required fields, types, strict unknown fields, value
+        ranges, duplicates. Later-phase (P1) fields are recognised and
+        rejected (E_UNSUPPORTED_COMMAND); `optional` cannot skip them yet.
+     3. game binding — only if the `game` section is well formed: ply
+        count, start position, final position (when the plan gives one)
+     4. references — only if 2 and 3 found no error: range, each move's
+        ply and SAN, claims, conflicts
+   A check that does not run, or has nothing to compare, is reported as
+   such ("not run" / "not checked"), never as passed. Binding is evidence,
+   not proof, that the plan was written for this game: only the ply count,
+   the two positions and the referenced plies' SAN are compared. (A
+   deterministic game fingerprint is a design point for Phase 4B.)
+   Limits are provisional. Duplicate keys inside a JSON object are not
+   detected (JSON.parse keeps the last one). */
+const PLAN_SCHEMA_ID = 'chess-cinema-plan/1';
+const PLAN_MAX_BYTES = 64 * 1024;                                       // provisional
+const PLAN_HOLD_MS_MAX = 20000;                                         // provisional
+const PLAN_ENDING_HOLD_MS_MIN = 1000, PLAN_ENDING_HOLD_MS_MAX = 20000;  // provisional
+const PLAN_CLAIMS = ['capture', 'check', 'mate', 'castle', 'en_passant', 'promotion'];
+const PLAN_STANDARD_START = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -';
+// The schema, as data: per object kind, its fields. Types: string, int, bool,
+// enum, square, color, fen, object (of: kind), array (items).
+const PLAN_FIELDS = {
+  root:      { schema: { t: 'string', req: true }, game: { t: 'object', of: 'game', req: true }, analysis: { t: 'object', of: 'analysis' },
+               range: { t: 'object', of: 'range' }, defaults: { t: 'object', of: 'defaults' },
+               moves: { t: 'array', items: { t: 'object', of: 'move' } }, ending: { t: 'object', of: 'ending' } },
+  game:      { plies: { t: 'int', req: true, min: 1 }, final_fen: { t: 'fen' }, start_fen: { t: 'fen' } },
+  analysis:  { source: { t: 'string', nonEmpty: true } },
+  range:     { from_ply: { t: 'int', req: true, min: 1 }, to_ply: { t: 'int', req: true, min: 1 } },
+  defaults:  { auto_frame: { t: 'bool' } },
+  move:      { ply: { t: 'int', req: true, min: 1 }, san: { t: 'string', req: true, nonEmpty: true },
+               claims: { t: 'array', unique: true, items: { t: 'enum', values: PLAN_CLAIMS } },
+               hold_ms: { t: 'int', min: 0, max: PLAN_HOLD_MS_MAX }, frame: { t: 'object', of: 'frame' }, marks: { t: 'object', of: 'marks' } },
+  frame:     { mode: { t: 'enum', values: ['default', 'close', 'full'] }, targets: { t: 'array', unique: true, items: { t: 'square' } } },
+  marks:     { highlights: { t: 'array', uniqueBy: 'sq', items: { t: 'object', of: 'highlight' } }, arrows: { t: 'array', items: { t: 'object', of: 'arrow' } } },
+  highlight: { sq: { t: 'square', req: true }, color: { t: 'color' } },
+  arrow:     { from: { t: 'square', req: true }, to: { t: 'square', req: true }, color: { t: 'color' } },
+  ending:    { hold_ms: { t: 'int', min: PLAN_ENDING_HOLD_MS_MIN, max: PLAN_ENDING_HOLD_MS_MAX }, return_to_full: { t: 'bool' } }
+};
+// Recognised, planned for a later phase, rejected here. `optional` (skip an
+// unsupported command) is itself not available in Phase 4A, wherever it appears.
+const PLAN_UNSUPPORTED = { root: ['groups', 'acts', 'intro', 'camera', 'settings'], move: ['classification', 'move_ms', 'anticipation_ms'] };
+const planOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+const planFen4 = (fen) => String(fen).trim().split(/\s+/).slice(0, 4).join(' ');
+// SAN as compared: check/mate signs and annotation glyphs at the end are
+// ignored, and castling written with zeros is read as with letters.
+function planNormSan(san){
+  const s = String(san).replace(/[+#!?]+$/, '');
+  return s === '0-0-0' ? 'O-O-O' : s === '0-0' ? 'O-O' : s;
+}
+// What chess.js says about a move record, for `claims`. A mate is also a check.
+function planClaimHolds(rec, claim){
+  switch(claim){
+    case 'capture':    return !!rec.captured;
+    case 'check':      return !!rec.checkSquare;
+    case 'mate':       return !!(rec.san && /#$/.test(rec.san));
+    case 'castle':     return !!rec.isCastle;
+    case 'en_passant': return !!rec.isEnPassant;
+    case 'promotion':  return !!rec.promotion;
+  }
+  return false;
+}
+
+// The loaded game as validation sees it, built on a throwaway chess.js
+// instance: `game` itself is only read. The selectable plies are the
+// timeline's (max(historyPointer, importedLimit)), as for a sequence range.
+function planGameFacts(){
+  const visible = Math.max(historyPointer, importedLimit);
+  if(!visible) return { visible: 0 };
+  const probe = new Chess();
+  if(historyPointer > 0){
+    // game.pgn() carries a set-up start position as its [FEN] header.
+    if(!probe.load_pgn(game.pgn())) throw new Error('the live game could not be re-read');
+    while(probe.undo()){}
+  } else if(!probe.load(game.fen())) throw new Error('the live position could not be re-read');
+  if(probe.history().length !== 0) throw new Error('the start position could not be reconstructed');
+  const start = probe.fen();
+  for(let p = 1; p <= visible; p++){
+    const rec = moveHistory[p - 1];
+    const m = rec ? probe.move({ from: rec.from, to: rec.to, promotion: rec.promotion || undefined }) : null;
+    if(!m || m.san !== rec.san) throw new Error(`the move records disagree with chess.js at ply ${p}`);
+  }
+  return { visible, start, final: probe.fen() };
+}
+
+function validateStoryPlan(text){
+  const out = { entries: [], checks: [], rows: [], summary: [], valid: false };
+  const add = (severity, code, path, message, hint) => out.entries.push({ severity, code, path, message, hint: hint || '' });
+  const errorsUnder = (prefix) => out.entries.some(e => e.severity === 'error' && (e.path === prefix || e.path.startsWith(prefix + '/')));
+  const check = (id, label, status, detail) => out.checks.push({ id, label, status, detail });
+  const notRun = (why) => {
+    check('plies', 'Selectable ply count', 'not run', why);
+    check('start', 'Start position', 'not run', why);
+    check('final', 'Final position', 'not run', why);
+    check('san', 'SAN of referenced plies', 'not run', why);
+  };
+  const ptr = (k) => '/' + String(k).replace(/~/g, '~0').replace(/\//g, '~1');
+  const finish = () => { out.valid = !out.entries.some(e => e.severity === 'error'); return out; };
+
+  // 1. Size, JSON, schema id.
+  const raw = String(text == null ? '' : text);
+  if(!raw.trim()){ add('error', 'E_JSON_PARSE', '', 'The plan is empty.', 'Paste the JSON plan, then press Validate.'); notRun('nothing to check'); return finish(); }
+  const bytes = new TextEncoder().encode(raw).length;
+  if(bytes > PLAN_MAX_BYTES){ add('error', 'E_PLAN_TOO_LARGE', '', `The plan is ${bytes} bytes; the limit is ${PLAN_MAX_BYTES} (provisional).`, 'Shorten it.'); notRun('the plan was not read'); return finish(); }
+  let plan;
+  try { plan = JSON.parse(raw); }
+  catch(e){ add('error', 'E_JSON_PARSE', '', 'Not valid JSON: ' + e.message, 'Check brackets, commas and quotes.'); notRun('the plan was not read'); return finish(); }
+  if(!plan || typeof plan !== 'object' || Array.isArray(plan)){ add('error', 'E_TYPE', '', 'The plan must be a JSON object.', 'Start with { "schema": "' + PLAN_SCHEMA_ID + '", ... }.'); notRun('the plan is not an object'); return finish(); }
+  if(!planOwn(plan, 'schema') || plan.schema !== PLAN_SCHEMA_ID){
+    add('error', 'E_SCHEMA_VERSION', '/schema', planOwn(plan, 'schema') ? `Unsupported schema ${JSON.stringify(plan.schema)}.` : 'The "schema" field is missing.', `Use "schema": "${PLAN_SCHEMA_ID}".`);
+    notRun('unsupported schema'); return finish();
+  }
+
+  // 2. Structure.
+  let fenProbe = null;
+  const validFen = (fen) => {
+    const parts = fen.trim().split(/\s+/);
+    if(parts.length !== 4 && parts.length !== 6) return false;
+    try { if(!fenProbe) fenProbe = new Chess(); return !!fenProbe.validate_fen(parts.length === 4 ? parts.join(' ') + ' 0 1' : parts.join(' ')).valid; } catch(e){ return false; }
+  };
+  function checkValue(f, v, path){
+    const kind = { string: 'a string', int: 'a whole number', bool: 'true or false', enum: 'a string', square: 'a square name', color: 'a colour string', fen: 'a FEN string', object: 'an object', array: 'an array' }[f.t];
+    const typeErr = () => add('error', 'E_TYPE', path, `Must be ${kind}.`, '');
+    switch(f.t){
+      case 'string':
+        if(typeof v !== 'string') return typeErr();
+        if(f.nonEmpty && !v.trim()) add('error', 'E_VALUE_RANGE', path, 'Must not be empty.', '');
+        return;
+      case 'int':
+        if(typeof v !== 'number' || !Number.isInteger(v)) return typeErr();
+        if((f.min !== undefined && v < f.min) || (f.max !== undefined && v > f.max))
+          add('error', 'E_VALUE_RANGE', path, `${v} is out of range (${f.min !== undefined ? f.min : '…'}–${f.max !== undefined ? f.max : '…'}).`, f.max !== undefined ? 'The limits are provisional.' : '');
+        return;
+      case 'bool':
+        if(typeof v !== 'boolean') typeErr();
+        return;
+      case 'enum':
+        if(typeof v !== 'string') return typeErr();
+        if(!f.values.includes(v)) add('error', 'E_VALUE_RANGE', path, `${JSON.stringify(v)} is not one of: ${f.values.join(', ')}.`, '');
+        return;
+      case 'square':
+        if(typeof v !== 'string') return typeErr();
+        if(!/^[a-h][1-8]$/.test(v)) add('error', 'E_VALUE_RANGE', path, `${JSON.stringify(v)} is not a square (a1–h8, lowercase).`, '');
+        return;
+      case 'color':
+        if(typeof v !== 'string') return typeErr();
+        if(!/^#[0-9a-fA-F]{6}$/.test(v)) add('error', 'E_VALUE_RANGE', path, `${JSON.stringify(v)} is not a colour in #RRGGBB form.`, '');
+        return;
+      case 'fen':
+        if(typeof v !== 'string') return typeErr();
+        if(!validFen(v)) add('error', 'E_VALUE_RANGE', path, 'Not a valid FEN (4 or 6 fields).', '');
+        return;
+      case 'object':
+        if(!v || typeof v !== 'object' || Array.isArray(v)) return typeErr();
+        return checkObject(f.of, v, path);
+      case 'array':
+        if(!Array.isArray(v)) return typeErr();
+        v.forEach((item, i) => checkValue(f.items, item, path + '/' + i));
+        if(f.unique || f.uniqueBy){
+          const seen = new Set();
+          v.forEach((item, i) => {
+            const key = f.uniqueBy ? (item && typeof item === 'object' ? item[f.uniqueBy] : undefined) : item;
+            if(typeof key !== 'string') return;
+            if(seen.has(key)) add('error', 'E_DUPLICATE_DIRECTIVE', path + '/' + i, `${JSON.stringify(key)} is listed twice.`, 'List it once.');
+            seen.add(key);
+          });
+        }
+        return;
+    }
+  }
+  function checkObject(kind, obj, path){
+    const spec = PLAN_FIELDS[kind], unsupported = PLAN_UNSUPPORTED[kind] || [];
+    for(const key of Object.keys(obj)){
+      const p = path + ptr(key);
+      if(planOwn(spec, key)) checkValue(spec[key], obj[key], p);
+      else if(unsupported.includes(key) || key === 'optional')
+        add('error', 'E_UNSUPPORTED_COMMAND', p, `"${key}" is recognised but not supported in this version (Phase 4A validates the core commands only).`, key === 'optional' ? 'Unsupported commands cannot be skipped yet: remove them.' : 'Remove it: it belongs to a later phase.');
+      else add('error', 'E_UNKNOWN_FIELD', p, `Unknown field "${key}".`, 'Allowed here: ' + Object.keys(spec).join(', ') + '.');
+    }
+    for(const [key, f] of Object.entries(spec)) if(f.req && !planOwn(obj, key)) add('error', 'E_MISSING_FIELD', path + ptr(key), `Required field "${key}" is missing.`, '');
+    if(kind === 'arrow' && typeof obj.from === 'string' && obj.from === obj.to) add('error', 'E_VALUE_RANGE', path + '/to', 'An arrow must end on another square.', '');
+  }
+  checkObject('root', plan, '');
+  const structureOk = !out.entries.some(e => e.severity === 'error');
+
+  // 3. Game binding (needs a well-formed `game`).
+  if(errorsUnder('/game')){ notRun('the "game" section has errors'); return finish(); }
+  if(typeof Chess !== 'function'){ add('error', 'E_INTERNAL', '/game', 'The chess engine is not loaded, so the game cannot be checked.', 'Reload the page.'); notRun('chess engine not loaded'); return finish(); }
+  let facts;
+  try { facts = planGameFacts(); }
+  catch(e){ add('error', 'E_INTERNAL', '/game', 'The loaded game could not be checked: ' + e.message + '.', 'Reload the game and try again.'); notRun('the loaded game could not be read'); return finish(); }
+  if(!facts.visible){ add('error', 'E_NO_GAME', '/game', 'No game is loaded.', 'Import the PGN the plan was written for, then validate.'); notRun('no game loaded'); return finish(); }
+  const g = plan.game, isStdStart = planFen4(facts.start) === PLAN_STANDARD_START;
+  if(g.plies === facts.visible) check('plies', 'Selectable ply count', 'passed', `${facts.visible}`);
+  else { check('plies', 'Selectable ply count', 'failed', `plan ${g.plies}, game ${facts.visible}`); add('error', 'E_GAME_MISMATCH', '/game/plies', `The plan is for ${g.plies} plies; the loaded game has ${facts.visible}.`, 'Load the game the plan was written for, or correct "plies".'); }
+  if(planOwn(g, 'start_fen')){
+    if(planFen4(g.start_fen) === planFen4(facts.start)) check('start', 'Start position', 'passed', planFen4(facts.start));
+    else { check('start', 'Start position', 'failed', `game ${planFen4(facts.start)}`); add('error', 'E_GAME_MISMATCH', '/game/start_fen', `The loaded game starts from ${planFen4(facts.start)}, not ${planFen4(g.start_fen)}.`, 'Positions are compared on placement, side to move, castling and en passant.'); }
+  } else if(isStdStart) check('start', 'Start position', 'passed', 'standard; the plan gives no start_fen, which means the standard position');
+  else { check('start', 'Start position', 'failed', `game starts from ${planFen4(facts.start)}`); add('error', 'E_GAME_MISMATCH', '/game/start_fen', `The loaded game starts from a set-up position (${planFen4(facts.start)}); the plan must give "start_fen".`, ''); }
+  if(planOwn(g, 'final_fen')){
+    if(planFen4(g.final_fen) === planFen4(facts.final)) check('final', 'Final position', 'passed', planFen4(facts.final));
+    else { check('final', 'Final position', 'failed', `game ${planFen4(facts.final)}`); add('error', 'E_GAME_MISMATCH', '/game/final_fen', `After ply ${facts.visible} the loaded game shows ${planFen4(facts.final)}, not ${planFen4(g.final_fen)}.`, 'Positions are compared on placement, side to move, castling and en passant.'); }
+  } else { check('final', 'Final position', 'not checked', 'the plan gives no final_fen'); add('warning', 'W_FINAL_FEN_MISSING', '/game/final_fen', 'The plan gives no "final_fen", so the final position was not compared.', 'Add the FEN after the last ply.'); }
+
+  // 4. References (only when nothing above failed).
+  if(!structureOk || errorsUnder('/game')){
+    check('san', 'SAN of referenced plies', 'not run', !structureOk ? 'the plan has structure errors' : 'the plan does not match the loaded game');
+    return finish();
+  }
+  let range = null;
+  if(planOwn(plan, 'range')){
+    const r = plan.range;
+    if(r.from_ply > r.to_ply) add('error', 'E_RANGE_INVALID', '/range', `from_ply ${r.from_ply} comes after to_ply ${r.to_ply}.`, '');
+    else if(r.from_ply > facts.visible) add('error', 'E_RANGE_INVALID', '/range/from_ply', `Ply ${r.from_ply} is beyond the game (${facts.visible} plies).`, '');
+    else if(r.to_ply > facts.visible) add('error', 'E_RANGE_INVALID', '/range/to_ply', `Ply ${r.to_ply} is beyond the game (${facts.visible} plies).`, '');
+    else range = r;
+  }
+  const moves = plan.moves || [], seen = new Map();
+  let sanChecked = 0, sanFailed = 0;
+  moves.forEach((d, i) => {
+    const p = '/moves/' + i;
+    if(seen.has(d.ply)){ add('error', 'E_DUPLICATE_DIRECTIVE', p + '/ply', `Ply ${d.ply} already has a directive (/moves/${seen.get(d.ply)}).`, 'Give each ply one directive.'); return; }
+    seen.set(d.ply, i);
+    if(d.ply > facts.visible){ add('error', 'E_PLY_RANGE', p + '/ply', `Ply ${d.ply} is beyond the game (${facts.visible} plies).`, ''); return; }
+    const rec = moveHistory[d.ply - 1];
+    sanChecked++;
+    if(planNormSan(d.san) !== planNormSan(rec.san)){ sanFailed++; add('error', 'E_SAN_MISMATCH', p + '/san', `Ply ${d.ply} is ${rec.san} in the loaded game; the plan says ${d.san}.`, 'Plies count half-moves from 1 (1. e4 is ply 1, 1… e5 ply 2).'); return; }
+    const claimsOk = [];
+    (d.claims || []).forEach((c, j) => { if(planClaimHolds(rec, c)) claimsOk.push(c); else add('error', 'E_CLAIM_MISMATCH', p + '/claims/' + j, `${rec.san} (ply ${d.ply}) is not a ${c.replace('_', ' ')}.`, 'Claims are checked against chess.js.'); });
+    const fr = d.frame || {}, targets = fr.targets || [];
+    if(fr.mode === 'full' && targets.length) add('error', 'E_CONFLICT', p + '/frame', 'A full-board frame cannot also have targets.', 'Use "close" (or no mode) with targets, or drop the targets.');
+    const inRange = !range || (d.ply >= range.from_ply && d.ply <= range.to_ply);
+    if(!inRange) add('warning', 'W_OUTSIDE_RANGE', p, `Ply ${d.ply} is outside the range ${range.from_ply}–${range.to_ply}; this directive would be ignored.`, '');
+    out.rows.push({ ply: d.ply, label: plyLabel(rec), cls: moveClass(rec), inRange, claims: claimsOk, hold: d.hold_ms, mode: fr.mode || 'default', targets,
+                    highlights: ((d.marks && d.marks.highlights) || []).map(h => h.sq), arrows: ((d.marks && d.marks.arrows) || []).map(a => a.from + '→' + a.to) });
+  });
+  if(!moves.length){ check('san', 'SAN of referenced plies', 'not checked', 'the plan references no ply'); add('warning', 'W_NO_MOVE_REFERENCES', '/moves', 'The plan references no ply, so no move text was compared with the game.', 'Reference at least the plies the plan is about.'); }
+  else if(!sanChecked) check('san', 'SAN of referenced plies', 'not checked', 'no referenced ply is in the game');
+  else check('san', 'SAN of referenced plies', sanFailed ? 'failed' : 'passed', `${sanChecked - sanFailed} of ${sanChecked} referenced plies match; the ${facts.visible - sanChecked} others are not compared one by one`);
+  out.rows.sort((a, b) => a.ply - b.ply);
+  out.summary = [
+    `Game: ${facts.visible} plies, ${isStdStart ? 'standard start' : 'set-up start'}.`,
+    `Range: ${range ? `plies ${range.from_ply}–${range.to_ply}` : 'whole game'}.`,
+    `Automatic close framing: ${plan.defaults && planOwn(plan.defaults, 'auto_frame') ? (plan.defaults.auto_frame ? 'on' : 'off') : 'off (default)'} — requested, not applied.`,
+    `Ending: ${plan.ending ? [planOwn(plan.ending, 'hold_ms') ? `hold ${plan.ending.hold_ms} ms` : '', planOwn(plan.ending, 'return_to_full') ? `return to full board: ${plan.ending.return_to_full ? 'yes' : 'no'}` : ''].filter(Boolean).join(', ') || 'default' : 'default'} — requested, not applied.`,
+    `Analysis source: ${plan.analysis && plan.analysis.source ? plan.analysis.source : 'not given'}.`
+  ];
+  return finish();
+}
+
+// ---- panel ----
+// The report on show and the game it was made for (by identity: a new
+// import, Reset, a new move or an undo that changes the selectable plies
+// makes it stale; selecting a move or flipping the board does not).
+let planReportShown = null;
+function planGameKey(){
+  const n = Math.max(historyPointer, importedLimit);
+  return { list: moveHistory, n, first: moveHistory[0] || null, last: moveHistory[n - 1] || null };
+}
+function markPlanReportStale(){
+  try {
+    if(!planReportShown) return;
+    const k = planGameKey(), was = planReportShown.key;
+    if(k.list !== was.list || k.n !== was.n || k.first !== was.first || k.last !== was.last)
+      document.getElementById('planPanel').dataset.stale = '1';
+  } catch(e){ console.error('Story plan: stale check failed:', e); }
+}
+function planReportText(res){
+  const errs = res.entries.filter(e => e.severity === 'error').length, warns = res.entries.length - errs;
+  const lines = [`Chess Cinema plan validation (${PLAN_SCHEMA_ID}): ` + (errs ? `INVALID — ${errs} error${errs === 1 ? '' : 's'}` : 'no errors') + `, ${warns} warning${warns === 1 ? '' : 's'}.`];
+  for(const e of res.entries) lines.push(`${e.severity.toUpperCase()} ${e.code} at ${e.path || '(document)'}: ${e.message}${e.hint ? ' ' + e.hint : ''}`);
+  lines.push('Game checks (evidence, not proof, that the plan is for this game):');
+  for(const c of res.checks) lines.push(`- ${c.label}: ${c.status}${c.detail ? ' (' + c.detail + ')' : ''}`);
+  if(res.valid){
+    lines.push(...res.summary);
+    for(const r of res.rows) lines.push(planRowText(r));
+  }
+  return lines.join('\n');
+}
+function planRowText(r){
+  const parts = [`Ply ${r.ply} · ${r.label} · ${r.cls}${r.inRange ? '' : ' · outside range'}`];
+  if(r.claims.length) parts.push('claims verified: ' + r.claims.join(', '));
+  if(r.hold !== undefined) parts.push(`hold ${r.hold} ms`);
+  parts.push('frame ' + r.mode + (r.targets.length ? ' [' + r.targets.join(' ') + ']' : ''));
+  if(r.highlights.length) parts.push('highlights ' + r.highlights.join(' '));
+  if(r.arrows.length) parts.push('arrows ' + r.arrows.join(' '));
+  return parts.join(' · ') + ' — requested, not applied (Phase 4A).';
+}
+function renderPlanReport(res){
+  const panel = document.getElementById('planPanel'), rep = document.getElementById('planReport');
+  const checks = document.getElementById('planChecks'), insp = document.getElementById('planInspector'), txt = document.getElementById('planReportText');
+  rep.textContent = ''; checks.textContent = ''; insp.textContent = '';
+  delete panel.dataset.stale;
+  if(!res){
+    delete panel.dataset.result;
+    txt.value = ''; txt.style.display = 'none';
+    document.getElementById('copyPlanReport').disabled = true;
+    return;
+  }
+  panel.dataset.result = res.valid ? 'valid' : 'invalid';
+  const errs = res.entries.filter(e => e.severity === 'error').length;
+  const head = document.createElement('div');
+  head.className = errs ? 'plan-error' : '';
+  head.textContent = errs ? `Invalid: ${errs} error${errs === 1 ? '' : 's'}, ${res.entries.length - errs} warning${res.entries.length - errs === 1 ? '' : 's'}. Nothing was applied.` : `Valid: no errors, ${res.entries.length} warning${res.entries.length === 1 ? '' : 's'}. Nothing is applied in this version.`;
+  rep.appendChild(head);
+  if(res.entries.length){
+    const ul = document.createElement('ul');
+    for(const e of res.entries){
+      const li = document.createElement('li');
+      li.className = e.severity === 'error' ? 'plan-error' : 'plan-warning';
+      li.dataset.severity = e.severity; li.dataset.code = e.code; li.dataset.path = e.path;
+      li.textContent = `${e.code} at ${e.path || '(document)'}: ${e.message}${e.hint ? ' ' + e.hint : ''}`;
+      ul.appendChild(li);
+    }
+    rep.appendChild(ul);
+  }
+  for(const c of res.checks){
+    const li = document.createElement('li');
+    li.dataset.check = c.id; li.dataset.status = c.status;
+    li.textContent = `${c.label}: ${c.status}${c.detail ? ' (' + c.detail + ')' : ''}`;
+    checks.appendChild(li);
+  }
+  if(res.checks.length){
+    const li = document.createElement('li');
+    li.textContent = 'These checks are evidence, not proof, that the plan was written for this game.';
+    checks.appendChild(li);
+  }
+  if(res.valid){
+    for(const line of res.summary){ const d = document.createElement('div'); d.textContent = line; insp.appendChild(d); }
+    for(const r of res.rows){ const d = document.createElement('div'); d.className = 'plan-row'; d.dataset.ply = String(r.ply); d.textContent = planRowText(r); insp.appendChild(d); }
+  }
+  txt.value = planReportText(res); txt.style.display = '';
+  document.getElementById('copyPlanReport').disabled = false;
+}
+document.getElementById('validatePlan').addEventListener('click', ()=>{
+  if(sequencePlayback.state !== 'idle'){ showMessage('Stop the sequence first.', 'error'); return; }
+  if(exportInProgress){ showMessage('Wait for the export to finish.', 'error'); return; }
+  let res;
+  try { res = validateStoryPlan(document.getElementById('planInput').value); }
+  catch(e){
+    console.error('Story plan validation failed:', e);
+    res = { entries: [{ severity: 'error', code: 'E_INTERNAL', path: '', message: 'Validation stopped unexpectedly: ' + e.message, hint: '' }], checks: [], rows: [], summary: [], valid: false };
+  }
+  planReportShown = { key: planGameKey() };
+  renderPlanReport(res);
+});
+document.getElementById('clearPlan').addEventListener('click', ()=>{
+  document.getElementById('planInput').value = '';
+  planReportShown = null;
+  renderPlanReport(null);
+});
+document.getElementById('copyPlanReport').addEventListener('click', ()=>{
+  const txt = document.getElementById('planReportText');
+  if(!txt.value) return;
+  const fallback = () => {
+    try { txt.select(); if(document.execCommand('copy')) { showMessage('Report copied.', 'success'); return; } } catch(e){}
+    showMessage('Copy failed: select the report text and copy it by hand.', 'error');
+  };
+  try {
+    if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt.value).then(() => showMessage('Report copied.', 'success'), fallback);
+    else fallback();
+  } catch(e){ fallback(); }
+});
 
 /* ---------------- INIT ---------------- */
 window.addEventListener('load', ()=>{ try{ readyInit(); } catch(e){ console.error(e); readyInit(); } });
