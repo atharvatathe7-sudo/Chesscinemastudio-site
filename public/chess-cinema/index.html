@@ -2717,6 +2717,106 @@ function exportHoldFrames(rec, fps){
            total: HOLD_FRAMES + (story ? STORY_EASE_FRAMES + STORY_HOLD_FRAMES : 0) };
 }
 
+/* THE MOVE'S FRAMING BOXES — the camera geometry that decides how tight a
+   move's close-up is, in one place for the two things that need it: the export
+   camera (buildMoveClip, which draws with it) and sequencePlan (which decides,
+   from the very same numbers, whether automatic close framing would settle on
+   the full board and so should not be scheduled at all). Unchanged from the
+   code that sat inside buildMoveClip; `autoFrame` frames the move as a marked
+   one with nothing but its own path to frame (Phase 3B).
+   Returns the sampled drawn extents of the moving piece(s) along the whole path
+   (trajXs/trajYs), the box sizes, boxSize (the movement framing), checkFraming
+   (the landing square with the checked king, or null) and settledBox (the box
+   the camera settles on after landing). */
+function moveFramingBoxes(moveRec, autoFrame){
+  const travelType = moveRec.pieceType || moveRec.resultPieceType || 'p';
+  const secondary = moveRec.secondary || null; // castling's rook
+  const recArrows = moveRec.arrows || [];
+  const recHighlights = moveRec.highlights || [];
+  const startCenter = squareCenter(moveRec.from), endCenter = squareCenter(moveRec.to);
+  const secondaryStartCenter = secondary ? squareCenter(secondary.from) : null;
+  const secondaryEndCenter = secondary ? squareCenter(secondary.to) : null;
+  const SQ = LOGICAL_SIZE/8;
+  const margin = SQ * 0.5;              // "half square" padding (unchanged)
+  const MIN_BOX = SQ * 2.8;             // never tighter than ~3 squares of context
+  const MAX_TRAJECTORY_BOX = SQ * 5.2;  // beyond this the camera pans instead of zooming out
+
+  const TRAJECTORY_SAMPLES = 24;
+  const trajXs = [], trajYs = [];
+  function addTrajectorySamples(type, start, end){
+    for(let i=0;i<=TRAJECTORY_SAMPLES;i++){
+      const st = pieceTrajectory(type, start, end, i/TRAJECTORY_SAMPLES);
+      // The piece is drawn centred on (x,y) at PIECE_SCALE, so the box has
+      // to contain its drawn extent, not just its centre point.
+      const halfPiece = SQ * PIECE_SCALE * st.scale / 2;
+      trajXs.push(st.x - halfPiece, st.x + halfPiece);
+      trajYs.push(st.y - halfPiece, st.y + halfPiece);
+    }
+  }
+  addTrajectorySamples(travelType, startCenter, endCenter);
+  if(secondary){ addTrajectorySamples(secondary.type, secondaryStartCenter, secondaryEndCenter); }
+
+  const trajMinX = Math.min(...trajXs) - margin, trajMaxX = Math.max(...trajXs) + margin;
+  const trajMinY = Math.min(...trajYs) - margin, trajMaxY = Math.max(...trajYs) + margin;
+  const trajW = trajMaxX - trajMinX, trajH = trajMaxY - trajMinY;
+
+  // Annotations (arrows/highlights) must fit statically — they are never
+  // revealed by camera movement. Story Targets join them here: the
+  // creator marking a square is the same kind of "this is what matters"
+  // signal an arrow or highlight already is, so it widens the frame the
+  // same way — and because annXs/annYs are seeded with the trajectory
+  // bounds, the resulting box always contains the whole move too.
+  const annXs = [trajMinX, trajMaxX], annYs = [trajMinY, trajMaxY];
+  for(const h of recHighlights){
+    const hc = squareCenter(h.sq);
+    annXs.push(hc.x - SQ/2 - margin, hc.x + SQ/2 + margin);
+    annYs.push(hc.y - SQ/2 - margin, hc.y + SQ/2 + margin);
+  }
+  for(const a of recArrows){
+    const ac1 = squareCenter(a.from);
+    annXs.push(ac1.x - margin, ac1.x + margin); annYs.push(ac1.y - margin, ac1.y + margin);
+    const ac2 = a.to ? squareCenter(a.to) : {x:a.toX, y:a.toY};
+    if(ac2){ annXs.push(ac2.x - margin, ac2.x + margin); annYs.push(ac2.y - margin, ac2.y + margin); }
+  }
+  const hasStoryTargets = moveRec.storyTargets.length > 0;
+  for(const sq of moveRec.storyTargets){
+    const sc = squareCenter(sq);
+    annXs.push(sc.x - SQ/2 - margin, sc.x + SQ/2 + margin);
+    annYs.push(sc.y - SQ/2 - margin, sc.y + SQ/2 + margin);
+  }
+  const annW = Math.max(...annXs) - Math.min(...annXs);
+  const annH = Math.max(...annYs) - Math.min(...annYs);
+
+  const cap = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const trajBox = cap(Math.max(trajW, trajH), MIN_BOX, Math.min(MAX_TRAJECTORY_BOX, LOGICAL_SIZE));
+  // Only annotations may push the box past the trajectory cap. annXs/annYs
+  // are seeded with the trajectory bounds so that an annotation box also
+  // contains the move — but when there are no annotations at all that
+  // seeding would hand the UNCAPPED trajectory extent straight back and
+  // silently undo the cap, which is what still made Qa1-a8 open out to
+  // the whole board.
+  // An automatically framed move (Phase 3B) takes the same camera as a
+  // marked one, with nothing but its own path to frame.
+  const hasAnnotations = recHighlights.length > 0 || recArrows.length > 0 || hasStoryTargets || !!autoFrame;
+  const annBox  = hasAnnotations ? cap(Math.max(annW, annH), MIN_BOX, LOGICAL_SIZE) : 0;
+  // DIRECTORIAL RULE: piece movement alone must never trigger cinematic
+  // camera behaviour. Only an explicit creator marker — a Story Target,
+  // or an existing arrow/highlight annotation — does. Without one, the
+  // move plays on the stable full board regardless of how far the piece
+  // travels; holdBox/holdCamX/holdCamY and the check-context framing
+  // below both derive their floor from boxSize, so an ordinary move's
+  // post-landing framing (including an incidental check) stays full-board
+  // too, with no separate change needed there. With a marker, this is
+  // exactly the existing trajectory/annotation-aware framing.
+  const boxSize = hasAnnotations ? Math.min(LOGICAL_SIZE, Math.max(trajBox, annBox)) : LOGICAL_SIZE;
+  // The framing that contains BOTH the landing square and the checked king
+  // (boxSize and MIN_BOX are only its floor).
+  const checkFraming = moveRec.checkSquare
+    ? framingForCentres([endCenter, squareCenter(moveRec.checkSquare)], Math.max(MIN_BOX, boxSize))
+    : null;
+  return { MIN_BOX, trajXs, trajYs, trajW, trajH, annXs, annYs, boxSize, checkFraming, settledBox: checkFraming ? checkFraming.box : boxSize };
+}
+
 /* ---------------- SEQUENCE TIMELINE (Phase 2B, pacing Phase 2C) ----------------
    ONE timeline for a run of consecutive plies, used by sequence playback on
    screen AND by the export, so both show the same moves for the same time.
@@ -2754,7 +2854,12 @@ const PACE_ORDINARY_MS = 450, PACE_CAPTURE_MS = 700, PACE_CHECK_MS = 700, PACE_M
    the creator has not marked is framed by the export camera as if it were
    marked (see buildMoveClip, cameraTransitions), and holds at least
    AUTO_FRAME_HOLD_MS: a 500 ms zoom-in after landing, about 1 s of close-up,
-   a 300 ms zoom-out. Movement time and every other hold are unchanged. */
+   a 300 ms zoom-out. Movement time and every other hold are unchanged.
+   Not every capture or check is worth it: when the camera's SETTLED framing
+   (moveFramingBoxes(rec, true).settledBox) is the whole board — a very long
+   path, or a checked king far from the landing square — a close-up would only
+   give way to the full board at once, so the move is not framed at all and
+   keeps its ordinary hold. */
 const AUTO_FRAME_HOLD_MS = 1800;
 function moveClass(rec){
   if(rec.san && /#$/.test(rec.san)) return 'checkmate';
@@ -2776,7 +2881,8 @@ function sequencePlan(records, fps, fxKind, autoFrame = false){
     const marked = !!((rec.storyTargets && rec.storyTargets.length) || (rec.arrows && rec.arrows.length) ||
                       (rec.highlights && rec.highlights.length) || rec.badge);
     const cls = moveClass(rec);
-    const auto = !!autoFrame && !marked && (cls === 'capture' || cls === 'check');
+    const auto = !!autoFrame && !marked && (cls === 'capture' || cls === 'check') &&
+                 moveFramingBoxes(rec, true).settledBox < LOGICAL_SIZE;
     const fullHold = last || marked || auto;
     const viewMs = viewingIntervalMs(rec, last);
     const hold = Math.max(viewMs * fps,                                                       // ms x fps
@@ -2831,6 +2937,17 @@ function planFrame(plan, n){
    a close-up that already holds everything the next move needs (its
    subjectBox) is simply kept through that move, so the camera does not move;
    otherwise the usual ease applies. Marked moves are never reused this way.
+   One quiet move in between is bridged too: after an automatic close-up F, an
+   unmarked move that is not the last (no capture, no check) whose whole path
+   lies inside F, followed by an automatic move that also lies inside F, is
+   played inside F — a king stepping out of check, then the next check, stay
+   in one close-up instead of zooming out and in again. This only happens
+   where the camera then has nothing to do inside the quiet move's short
+   (450 ms) hold: a transition there could last at most 233 ms (the usual
+   rule keeps half of a still view), so when the move after it is not
+   automatic or does not fit F, F is left by the usual full 300 ms zoom-out in
+   the automatic move's own hold, as before. At most one quiet move is bridged
+   per held close-up, so a close-up is never held indefinitely.
    `clips` are the export's buildMoveClip()s for plan.moves. Returns the crops
    that replace a move's own, by frame. */
 const CAMERA_TRANSITION_MS = 300, CAMERA_TRANSITION_MIN_FRAMES = 3, CAMERA_ZOOM_IN_MS = 500, MATE_CLOSEUP_MS = 1000;
@@ -2845,21 +2962,33 @@ function cameraTransitions(plan, clips){
   const frames = (ms) => Math.round(ms * plan.fps / 1000);
   const last = plan.moves.length - 1;
   const maxFrames = frames(CAMERA_TRANSITION_MS) - 1;
+  let bridged = false;   // the close-up now held has already been kept through one quiet move
   for(let k = 0; k + 1 < plan.moves.length; k++){
     const next = Math.ceil(plan.moves[k].end / 1000);   // the next move's first frame
-    const from = shown(next - 1), to = cropOf(next);
+    const from = shown(next - 1), to = shown(next);
     if(same(from, to)) continue;
     const nx = plan.moves[k + 1], nxEnd = k + 1 < last ? Math.ceil(nx.end / 1000) : plan.totalFrames;
     const zoom = frames(CAMERA_ZOOM_IN_MS);
     if((!plan.moves[k].fullHold || plan.moves[k].auto) && (nx.rec.storyTargets.length || nx.auto) && same(from, FULL) && nx.landFrame + zoom < nxEnd){
       for(let n = next; n <= nx.landFrame; n++) crops.set(n, FULL);
       for(let h = 1; h < zoom; h++) crops.set(nx.landFrame + h, lerpCrop(FULL, cropOf(nx.landFrame + h), easeInOutCubic(h / zoom)));
+      bridged = false;
+      continue;
+    }
+    // Bridge one quiet move: keep the close-up through it and through the automatic move after it.
+    const after = plan.moves[k + 2];
+    if(plan.moves[k].auto && !bridged && !same(from, FULL) && !nx.fullHold && after && after.auto &&
+       contains(from, clips[k + 1].subjectBox()) && contains(from, clips[k + 2].subjectBox())){
+      const afterEnd = k + 2 < last ? Math.ceil(after.end / 1000) : plan.totalFrames;
+      for(let n = next; n < afterEnd; n++) crops.set(n, from);
+      bridged = true;
       continue;
     }
     if(plan.moves[k].auto && nx.auto && !same(from, FULL) && contains(from, clips[k + 1].subjectBox())){
       for(let n = next; n < nxEnd; n++) crops.set(n, from);
       continue;
     }
+    bridged = false;   // the camera is about to change: a new close-up (or the full board) follows
     // Hold frames after the landing frame on which this move's camera is
     // already at rest on `from`.
     let still = 0;
@@ -3177,79 +3306,10 @@ function exportMovesAsWebM(records, opts={fps:EXPORT_FPS}){
          is never enough; an unmarked move keeps the stable full board no
          matter how far the piece travels. See hasAnnotations/boxSize below.
       */
+      // The framing boxes (moveFramingBoxes, above: the same numbers sequencePlan
+      // uses to decide whether a move is framed automatically at all).
       const SQ = LOGICAL_SIZE/8;
-      const margin = SQ * 0.5;              // "half square" padding (unchanged)
-      const MIN_BOX = SQ * 2.8;             // never tighter than ~3 squares of context
-      const MAX_TRAJECTORY_BOX = SQ * 5.2;  // beyond this the camera pans instead of zooming out
-
-      const TRAJECTORY_SAMPLES = 24;
-      const trajXs = [], trajYs = [];
-      function addTrajectorySamples(type, start, end){
-        for(let i=0;i<=TRAJECTORY_SAMPLES;i++){
-          const st = pieceTrajectory(type, start, end, i/TRAJECTORY_SAMPLES);
-          // The piece is drawn centred on (x,y) at PIECE_SCALE, so the box has
-          // to contain its drawn extent, not just its centre point.
-          const halfPiece = SQ * PIECE_SCALE * st.scale / 2;
-          trajXs.push(st.x - halfPiece, st.x + halfPiece);
-          trajYs.push(st.y - halfPiece, st.y + halfPiece);
-        }
-      }
-      addTrajectorySamples(travelType, startCenter, endCenter);
-      if(secondary){ addTrajectorySamples(secondary.type, secondaryStartCenter, secondaryEndCenter); }
-
-      const trajMinX = Math.min(...trajXs) - margin, trajMaxX = Math.max(...trajXs) + margin;
-      const trajMinY = Math.min(...trajYs) - margin, trajMaxY = Math.max(...trajYs) + margin;
-      const trajW = trajMaxX - trajMinX, trajH = trajMaxY - trajMinY;
-
-      // Annotations (arrows/highlights) must fit statically — they are never
-      // revealed by camera movement. Story Targets join them here: the
-      // creator marking a square is the same kind of "this is what matters"
-      // signal an arrow or highlight already is, so it widens the frame the
-      // same way — and because annXs/annYs are seeded with the trajectory
-      // bounds, the resulting box always contains the whole move too.
-      const annXs = [trajMinX, trajMaxX], annYs = [trajMinY, trajMaxY];
-      for(const h of recHighlights){
-        const hc = squareCenter(h.sq);
-        annXs.push(hc.x - SQ/2 - margin, hc.x + SQ/2 + margin);
-        annYs.push(hc.y - SQ/2 - margin, hc.y + SQ/2 + margin);
-      }
-      for(const a of recArrows){
-        const ac1 = squareCenter(a.from);
-        annXs.push(ac1.x - margin, ac1.x + margin); annYs.push(ac1.y - margin, ac1.y + margin);
-        const ac2 = a.to ? squareCenter(a.to) : {x:a.toX, y:a.toY};
-        if(ac2){ annXs.push(ac2.x - margin, ac2.x + margin); annYs.push(ac2.y - margin, ac2.y + margin); }
-      }
-      const hasStoryTargets = moveRec.storyTargets.length > 0;
-      for(const sq of moveRec.storyTargets){
-        const sc = squareCenter(sq);
-        annXs.push(sc.x - SQ/2 - margin, sc.x + SQ/2 + margin);
-        annYs.push(sc.y - SQ/2 - margin, sc.y + SQ/2 + margin);
-      }
-      const annW = Math.max(...annXs) - Math.min(...annXs);
-      const annH = Math.max(...annYs) - Math.min(...annYs);
-
-      const cap = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-      const trajBox = cap(Math.max(trajW, trajH), MIN_BOX, Math.min(MAX_TRAJECTORY_BOX, LOGICAL_SIZE));
-      // Only annotations may push the box past the trajectory cap. annXs/annYs
-      // are seeded with the trajectory bounds so that an annotation box also
-      // contains the move — but when there are no annotations at all that
-      // seeding would hand the UNCAPPED trajectory extent straight back and
-      // silently undo the cap, which is what still made Qa1-a8 open out to
-      // the whole board.
-      // An automatically framed move (Phase 3B) takes the same camera as a
-      // marked one, with nothing but its own path to frame.
-      const hasAnnotations = recHighlights.length > 0 || recArrows.length > 0 || hasStoryTargets || !!autoFrame;
-      const annBox  = hasAnnotations ? cap(Math.max(annW, annH), MIN_BOX, LOGICAL_SIZE) : 0;
-      // DIRECTORIAL RULE: piece movement alone must never trigger cinematic
-      // camera behaviour. Only an explicit creator marker — a Story Target,
-      // or an existing arrow/highlight annotation — does. Without one, the
-      // move plays on the stable full board regardless of how far the piece
-      // travels; holdBox/holdCamX/holdCamY and the check-context framing
-      // below both derive their floor from boxSize, so an ordinary move's
-      // post-landing framing (including an incidental check) stays full-board
-      // too, with no separate change needed there. With a marker, this is
-      // exactly the existing trajectory/annotation-aware framing.
-      const boxSize = hasAnnotations ? Math.min(LOGICAL_SIZE, Math.max(trajBox, annBox)) : LOGICAL_SIZE;
+      const { MIN_BOX, trajXs, trajYs, trajW, trajH, annXs, annYs, boxSize, checkFraming } = moveFramingBoxes(moveRec, autoFrame);
 
       // Centre of the whole framed event (trajectory + annotations).
       const eventCX = (Math.min(...annXs) + Math.max(...annXs))/2;
@@ -3299,7 +3359,7 @@ function exportMovesAsWebM(records, opts={fps:EXPORT_FPS}){
         // king. boxSize acts purely as a FLOOR (with MIN_BOX), so this beat
         // widens or holds and never tightens back in on the movement framing;
         // the board is the only ceiling, so a distant king still fits.
-        const f = framingForCentres([endCenter, checkSq], Math.max(MIN_BOX, boxSize));
+        const f = checkFraming;
         holdBox = f.box; holdCamX = f.camX; holdCamY = f.camY;
       }
 
