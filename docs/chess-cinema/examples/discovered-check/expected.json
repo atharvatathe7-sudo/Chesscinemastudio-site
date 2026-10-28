@@ -1,0 +1,101 @@
+{
+  "about": "Observed by running this packet through Validate and Apply on the application below (story_examples_test.js compares every field). Analysis: illustrative, not a Chessis export.",
+  "app": {
+    "commit": "ff71e1ff86f2c9b52453af72b36f9bc7add54f85",
+    "page_sha256": "2b36098f6beb9981ce733f0000c135f89e5a43ccad58a9dc8b87bf081e079ba5",
+    "capture_fx": "dissolve (default)",
+    "board": "not flipped"
+  },
+  "lint_context": {
+    "target_s": 18,
+    "moments": [
+      52,
+      53,
+      54,
+      55,
+      56
+    ]
+  },
+  "validate": {
+    "result": "valid",
+    "entries": []
+  },
+  "apply": {
+    "result": "applied",
+    "entries": []
+  },
+  "timeline": {
+    "frames": 527,
+    "seconds": 17.57,
+    "ending": "full",
+    "columns": [
+      "ply",
+      "start",
+      "land",
+      "end",
+      "holdMs",
+      "holdReason",
+      "camEntry",
+      "camEntryFrames",
+      "camAfter",
+      "camOwn",
+      "camEnding",
+      "camReturn"
+    ],
+    "units": "start/land/end in ms×fps (divide by 1000 for frames); holdMs in ms; camera frames are video frames from 0",
+    "moves": [
+      [41,0,5400,18900,450,"requested","start","","","full","",""],
+      [42,18900,23700,32700,300,"requested","full","","","full","",""],
+      [43,32700,39900,53400,450,"requested","full","","","full","",""],
+      [44,53400,58200,67200,300,"requested","full","","","full","",""],
+      [45,67200,72600,81600,300,"requested","full","","","full","",""],
+      [46,81600,87000,96000,300,"requested","full","","","full","",""],
+      [47,96000,100800,109800,300,"requested","full","","","full","",""],
+      [48,109800,118200,133200,500,"requested","full","","","full","",""],
+      [49,133200,139800,154800,500,"requested","full","","","full","",""],
+      [50,154800,159600,168600,300,"requested","full","","","full","",""],
+      [51,168600,175200,188700,450,"requested","full","","","full","",""],
+      [52,188700,193500,238500,1500,"requested","ease","183-189","","close","",""],
+      [53,238500,243900,321900,2600,"requested","ease","231-239","245-288","close","",""],
+      [54,321900,326700,356700,1000,"requested","ease","314-322","","full","",""],
+      [55,356700,361500,415500,1800,"requested","full","","363-377","close","",""],
+      [56,415500,420900,525900,3500,"requested","ease","408-416","","full","full",""]
+    ]
+  },
+  "camera_note": "A Story-Target strike ends its own close-up: the camera eases out for 27… Kb6 (frames 314–322) and zooms in again after 28. Bxf6 lands (frames 363–377). One reversal inside the combination: within the provisional limit.",
+  "lint": {
+    "hard": [],
+    "quality": [],
+    "notes": [
+      "N_CAMERA_REVERSAL"
+    ],
+    "metrics": {
+      "frames": 527,
+      "seconds": 17.57,
+      "emphasizedShare": 0.25,
+      "setupMedianMs": 300,
+      "combinations": [
+        [
+          53,
+          55
+        ]
+      ],
+      "anticipation": [
+        {
+          "strike": 53,
+          "before": 52,
+          "holdMs": 1500,
+          "ratio": 5
+        }
+      ],
+      "framedMedianMs": 1800,
+      "contrast": 6,
+      "finalHoldMs": 3500,
+      "durationError": -0.02,
+      "reversals": [
+        54
+      ]
+    }
+  },
+  "accepted_quality_warnings": {}
+}

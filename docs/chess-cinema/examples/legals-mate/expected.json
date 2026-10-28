@@ -1,0 +1,104 @@
+{
+  "about": "Observed by running this packet through Validate and Apply on the application below (story_examples_test.js compares every field). Analysis: illustrative, not a Chessis export.",
+  "app": {
+    "commit": "ff71e1ff86f2c9b52453af72b36f9bc7add54f85",
+    "page_sha256": "2b36098f6beb9981ce733f0000c135f89e5a43ccad58a9dc8b87bf081e079ba5",
+    "capture_fx": "dissolve (default)",
+    "board": "not flipped"
+  },
+  "lint_context": {
+    "target_s": 18,
+    "moments": [
+      6,
+      9,
+      10,
+      11,
+      13
+    ]
+  },
+  "validate": {
+    "result": "valid",
+    "entries": []
+  },
+  "apply": {
+    "result": "applied",
+    "entries": []
+  },
+  "timeline": {
+    "frames": 502,
+    "seconds": 16.73,
+    "ending": "return",
+    "columns": [
+      "ply",
+      "start",
+      "land",
+      "end",
+      "holdMs",
+      "holdReason",
+      "camEntry",
+      "camEntryFrames",
+      "camAfter",
+      "camOwn",
+      "camEnding",
+      "camReturn"
+    ],
+    "units": "start/land/end in ms×fps (divide by 1000 for frames); holdMs in ms; camera frames are video frames from 0",
+    "moves": [
+      [1,0,5400,12900,250,"requested","start","","","full","",""],
+      [2,12900,18300,25800,250,"requested","full","","","full","",""],
+      [3,25800,31200,38700,250,"requested","full","","","full","",""],
+      [4,38700,43500,51000,250,"requested","full","","","full","",""],
+      [5,51000,57000,64500,250,"requested","full","","","full","",""],
+      [6,64500,71100,107100,1200,"requested","full","","","full","",""],
+      [7,107100,112500,121500,300,"requested","full","","","full","",""],
+      [8,121500,126300,156300,1000,"requested","full","","","full","",""],
+      [9,156300,161700,236700,2500,"requested","full","","163-206","close","",""],
+      [10,236700,242700,296700,1800,"requested","ease","229-237","","close","",""],
+      [11,296700,302700,356700,1800,"requested","ease","289-297","304-317","close","",""],
+      [12,356700,361500,375000,450,"default","ease","349-357","","full","",""],
+      [13,375000,380400,500400,4000,"requested","full","","382-396","close","return","426-434"]
+    ]
+  },
+  "camera_note": "Demonstrates the camera continuity limitation: plies 9, 10, 11 and 13 ask for close-ups, but the camera eases out to the full board for 6… Ke7 (frames 349–357) and zooms in again after 7. Nd5# lands (frames 382–396).",
+  "lint": {
+    "hard": [],
+    "quality": [
+      "Q_SELECTIVITY"
+    ],
+    "notes": [
+      "N_CAMERA_REVERSAL"
+    ],
+    "metrics": {
+      "frames": 502,
+      "seconds": 16.73,
+      "emphasizedShare": 0.46,
+      "setupMedianMs": 250,
+      "combinations": [
+        [
+          9,
+          10,
+          11,
+          13
+        ]
+      ],
+      "anticipation": [
+        {
+          "strike": 9,
+          "before": 8,
+          "holdMs": 1000,
+          "ratio": 4
+        }
+      ],
+      "framedMedianMs": 1800,
+      "contrast": 7.2,
+      "finalHoldMs": 4000,
+      "durationError": -0.07,
+      "reversals": [
+        12
+      ]
+    }
+  },
+  "accepted_quality_warnings": {
+    "Q_SELECTIVITY": "The game is a 13-ply miniature whose second half is the combination; 6 of 13 plies (46 %) are emphasized. Accepted, not forced under 25 % (see storyboard.md)."
+  }
+}

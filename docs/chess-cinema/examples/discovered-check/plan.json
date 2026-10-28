@@ -1,0 +1,26 @@
+{
+  "schema": "chess-cinema-plan/1",
+  "game": {"plies":69,"final_fen":"Qkb5/2p3p1/p2n4/1p1B4/1P1p4/P6N/5PPP/6K1 b - - 3 35","fingerprint":"sha256:3a995f68223ef717ec5c86d99d4027cbd3dcb4dd6c5e6c2909b19b19792e0d50"},
+  "analysis": {"source": "illustrative (not a Chessis export)"},
+  "range": {"from_ply": 41, "to_ply": 56},
+  "defaults": {"auto_frame": false},
+  "moves": [
+    {"ply": 41, "san": "Bc5+", "hold_ms": 450},
+    {"ply": 42, "san": "Kd7", "hold_ms": 300},
+    {"ply": 43, "san": "Qc2", "hold_ms": 450},
+    {"ply": 44, "san": "Rfe8", "hold_ms": 300},
+    {"ply": 45, "san": "Nh3", "hold_ms": 300},
+    {"ply": 46, "san": "Ng4", "hold_ms": 300},
+    {"ply": 47, "san": "Ba2", "hold_ms": 300},
+    {"ply": 48, "san": "Rxe1+", "hold_ms": 500},
+    {"ply": 49, "san": "Rxe1", "hold_ms": 500},
+    {"ply": 50, "san": "d4", "hold_ms": 300},
+    {"ply": 51, "san": "Be6+", "hold_ms": 450},
+    {"ply": 52, "san": "Kc6", "hold_ms": 1500, "marks": {"arrows": [{"from": "c2", "to": "c6"}]}},
+    {"ply": 53, "san": "Be7+", "claims": ["check"], "frame": {"mode": "close", "targets": ["f6"]}, "hold_ms": 2600},
+    {"ply": 54, "san": "Kb6", "hold_ms": 1000},
+    {"ply": 55, "san": "Bxf6", "claims": ["capture"], "frame": {"mode": "close"}, "hold_ms": 1800},
+    {"ply": 56, "san": "Nxf6", "claims": ["capture"], "frame": {"mode": "full"}}
+  ],
+  "ending": {"hold_ms": 3500, "return_to_full": true}
+}

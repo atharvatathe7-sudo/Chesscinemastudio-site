@@ -1,0 +1,373 @@
+{
+  "about": "Negative and warning cases. Each \"expect\" was observed on the application below; story_examples_test.js checks result, applied state and the exact entries (severity, code, path), or for lint cases the exact hard/quality/note ids.",
+  "app": {
+    "commit": "ff71e1ff86f2c9b52453af72b36f9bc7add54f85",
+    "page_sha256": "2b36098f6beb9981ce733f0000c135f89e5a43ccad58a9dc8b87bf081e079ba5",
+    "capture_fx": "dissolve (default)",
+    "board": "not flipped"
+  },
+  "lint_context": {
+    "target_s": 18,
+    "moments": [
+      6,
+      9,
+      10,
+      11,
+      13
+    ]
+  },
+  "cases": [
+    {
+      "id": "n01-fingerprint-altered",
+      "file": "n01-fingerprint-altered.json",
+      "game": "legals-mate",
+      "action": "validate",
+      "what": "The AI retyped the fingerprint and changed its last characters.",
+      "expect": {
+        "result": "invalid",
+        "applied": false,
+        "entries": [
+          {
+            "severity": "error",
+            "code": "E_GAME_MISMATCH",
+            "path": "/game/fingerprint"
+          }
+        ]
+      }
+    },
+    {
+      "id": "n02-header-missing",
+      "file": "n02-header-missing.json",
+      "game": "legals-mate",
+      "action": "validate",
+      "what": "No game header was supplied and the AI left the game block out (it must ask instead).",
+      "expect": {
+        "result": "invalid",
+        "applied": false,
+        "entries": [
+          {
+            "severity": "error",
+            "code": "E_MISSING_FIELD",
+            "path": "/game"
+          }
+        ]
+      }
+    },
+    {
+      "id": "n03-fingerprint-omitted",
+      "file": "n03-fingerprint-omitted.json",
+      "game": "legals-mate",
+      "action": "apply",
+      "what": "The AI dropped the fingerprint from the game block; validation warns, Apply refuses.",
+      "expect": {
+        "result": "invalid",
+        "applied": false,
+        "entries": [
+          {
+            "severity": "error",
+            "code": "E_MISSING_FIELD",
+            "path": "/game/fingerprint"
+          }
+        ]
+      }
+    },
+    {
+      "id": "n04-move-number-as-ply",
+      "file": "n04-move-number-as-ply.json",
+      "game": "legals-mate",
+      "action": "validate",
+      "what": "The AI wrote 5. Nxe5 as ply 5 (the move number) instead of ply 9.",
+      "expect": {
+        "result": "invalid",
+        "applied": false,
+        "entries": [
+          {
+            "severity": "error",
+            "code": "E_SAN_MISMATCH",
+            "path": "/moves/7/san"
+          }
+        ]
+      }
+    },
+    {
+      "id": "n05-caption-field",
+      "file": "n05-caption-field.json",
+      "game": "legals-mate",
+      "action": "validate",
+      "what": "The AI added a caption field, which the schema does not have.",
+      "expect": {
+        "result": "invalid",
+        "applied": false,
+        "entries": [
+          {
+            "severity": "error",
+            "code": "E_UNKNOWN_FIELD",
+            "path": "/moves/8/caption"
+          }
+        ]
+      }
+    },
+    {
+      "id": "n06-classification",
+      "file": "n06-classification.json",
+      "game": "legals-mate",
+      "action": "validate",
+      "what": "The AI added a move classification (recognised, not supported yet, and not in the analysis).",
+      "expect": {
+        "result": "invalid",
+        "applied": false,
+        "entries": [
+          {
+            "severity": "error",
+            "code": "E_UNSUPPORTED_COMMAND",
+            "path": "/moves/9/classification"
+          }
+        ]
+      }
+    },
+    {
+      "id": "n07-acts",
+      "file": "n07-acts.json",
+      "game": "legals-mate",
+      "action": "validate",
+      "what": "The AI put its storyboard acts into the JSON.",
+      "expect": {
+        "result": "invalid",
+        "applied": false,
+        "entries": [
+          {
+            "severity": "error",
+            "code": "E_UNSUPPORTED_COMMAND",
+            "path": "/acts"
+          }
+        ]
+      }
+    },
+    {
+      "id": "n08-move-ms",
+      "file": "n08-move-ms.json",
+      "game": "legals-mate",
+      "action": "validate",
+      "what": "The AI asked for slow motion (move_ms is recognised but not supported).",
+      "expect": {
+        "result": "invalid",
+        "applied": false,
+        "entries": [
+          {
+            "severity": "error",
+            "code": "E_UNSUPPORTED_COMMAND",
+            "path": "/moves/8/move_ms"
+          }
+        ]
+      }
+    },
+    {
+      "id": "n09-false-claim",
+      "file": "n09-false-claim.json",
+      "game": "legals-mate",
+      "action": "validate",
+      "what": "The AI claimed that 5. Nxe5 gives check.",
+      "expect": {
+        "result": "invalid",
+        "applied": false,
+        "entries": [
+          {
+            "severity": "error",
+            "code": "E_CLAIM_MISMATCH",
+            "path": "/moves/8/claims/1"
+          }
+        ]
+      }
+    },
+    {
+      "id": "n10-full-with-targets",
+      "file": "n10-full-with-targets.json",
+      "game": "legals-mate",
+      "action": "validate",
+      "what": "The AI asked for the full board and Story Targets on the same move.",
+      "expect": {
+        "result": "invalid",
+        "applied": false,
+        "entries": [
+          {
+            "severity": "error",
+            "code": "E_CONFLICT",
+            "path": "/moves/8/frame"
+          }
+        ]
+      }
+    },
+    {
+      "id": "n11-final-hold-twice",
+      "file": "n11-final-hold-twice.json",
+      "game": "legals-mate",
+      "action": "validate",
+      "what": "The AI gave the final hold both on the last ply and in ending.hold_ms.",
+      "expect": {
+        "result": "invalid",
+        "applied": false,
+        "entries": [
+          {
+            "severity": "error",
+            "code": "E_CONFLICT",
+            "path": "/moves/11/hold_ms"
+          }
+        ]
+      }
+    },
+    {
+      "id": "n12-ending-too-short",
+      "file": "n12-ending-too-short.json",
+      "game": "legals-mate",
+      "action": "validate",
+      "what": "The AI asked for a 0.5 s final hold (minimum 1000 ms).",
+      "expect": {
+        "result": "invalid",
+        "applied": false,
+        "entries": [
+          {
+            "severity": "error",
+            "code": "E_VALUE_RANGE",
+            "path": "/ending/hold_ms"
+          }
+        ]
+      }
+    },
+    {
+      "id": "n13-json-with-comments",
+      "file": "n13-json-with-comments.txt",
+      "game": "legals-mate",
+      "action": "validate",
+      "what": "The AI wrote JSON with a comment and a trailing comma.",
+      "expect": {
+        "result": "invalid",
+        "applied": false,
+        "entries": [
+          {
+            "severity": "error",
+            "code": "E_JSON_PARSE",
+            "path": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": "w01-close-on-wide-move",
+      "file": "w01-close-on-wide-move.json",
+      "game": "mating-net",
+      "action": "validate",
+      "what": "The AI asked for a close-up of 33. Rxe8 (e1 to e8), which would be the whole board.",
+      "expect": {
+        "result": "valid",
+        "applied": false,
+        "entries": [
+          {
+            "severity": "warning",
+            "code": "W_CLOSEUP_IS_FULL",
+            "path": "/moves/8/frame/mode"
+          }
+        ]
+      }
+    },
+    {
+      "id": "w02-short-close-hold",
+      "file": "w02-short-close-hold.json",
+      "game": "legals-mate",
+      "action": "apply",
+      "what": "The AI gave a close-up strike a 1000 ms hold, below the 1.8 s minimum.",
+      "expect": {
+        "result": "applied",
+        "applied": true,
+        "entries": [
+          {
+            "severity": "warning",
+            "code": "W_HOLD_RAISED",
+            "path": "/moves/9/hold_ms"
+          }
+        ]
+      }
+    },
+    {
+      "id": "l01-storyboard-wrong-san",
+      "game": "legals-mate",
+      "action": "lint",
+      "plan": "../legals-mate/plan.json",
+      "storyboard": "l01-storyboard-wrong-san.md",
+      "what": "The storyboard names 5… Bxd1 at ply 9 (the game has 5. Nxe5 there); the plan itself is valid.",
+      "expect": {
+        "hard": [
+          "H_STORYBOARD_SAN"
+        ],
+        "quality": [
+          "Q_SELECTIVITY"
+        ],
+        "notes": [
+          "N_CAMERA_REVERSAL"
+        ]
+      }
+    },
+    {
+      "id": "l02-storyboard-untraced",
+      "game": "legals-mate",
+      "action": "lint",
+      "plan": "../legals-mate/plan.json",
+      "storyboard": "l02-storyboard-untraced.md",
+      "what": "The storyboard has no row for ply 8, which the plan holds for 1000 ms (emphasis without evidence).",
+      "expect": {
+        "hard": [
+          "H_UNTRACED"
+        ],
+        "quality": [
+          "Q_SELECTIVITY"
+        ],
+        "notes": [
+          "N_CAMERA_REVERSAL"
+        ]
+      }
+    },
+    {
+      "id": "l03-source-missing",
+      "game": "legals-mate",
+      "action": "lint",
+      "plan": "l03-source-missing.json",
+      "storyboard": "../legals-mate/storyboard.md",
+      "what": "The plan gives no analysis.source; the schema allows that, the guide does not.",
+      "expect": {
+        "hard": [
+          "H_SOURCE_MISSING"
+        ],
+        "quality": [
+          "Q_SELECTIVITY"
+        ],
+        "notes": [
+          "N_CAMERA_REVERSAL"
+        ]
+      }
+    },
+    {
+      "id": "l04-flat-pacing",
+      "game": "legals-mate",
+      "action": "lint",
+      "plan": "l04-flat-pacing.json",
+      "storyboard": null,
+      "what": "A valid, correct plan with weak storytelling: four close-ups, no anticipation, no claims, no stated ending. Quality warnings only, no hard failure.",
+      "expect": {
+        "hard": [],
+        "quality": [
+          "Q_SELECTIVITY",
+          "Q_ANTICIPATION",
+          "Q_ENDING_IMPLICIT",
+          "Q_MOMENT_NOT_EMPHASIZED",
+          "Q_UNCLAIMED",
+          "Q_UNCLAIMED",
+          "Q_UNCLAIMED",
+          "Q_UNCLAIMED"
+        ],
+        "notes": [
+          "N_TRACE_NOT_CHECKED",
+          "N_CAMERA_REVERSAL"
+        ]
+      }
+    }
+  ]
+}

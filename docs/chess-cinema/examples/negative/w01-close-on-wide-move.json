@@ -1,0 +1,23 @@
+{
+  "schema": "chess-cinema-plan/1",
+  "game": {"plies": 69, "final_fen": "Qkb5/2p3p1/p2n4/1p1B4/1P1p4/P6N/5PPP/6K1 b - - 3 35", "fingerprint": "sha256:3a995f68223ef717ec5c86d99d4027cbd3dcb4dd6c5e6c2909b19b19792e0d50"},
+  "analysis": {"source": "illustrative (not a Chessis export)"},
+  "range": {"from_ply": 57, "to_ply": 69},
+  "defaults": {"auto_frame": false},
+  "moves": [
+    {"ply": 57, "san": "Qf5", "hold_ms": 400},
+    {"ply": 58, "san": "Re8", "hold_ms": 400},
+    {"ply": 59, "san": "b4", "hold_ms": 400},
+    {"ply": 60, "san": "Bc8", "hold_ms": 400},
+    {"ply": 61, "san": "Qc5+", "claims": ["check"], "hold_ms": 800},
+    {"ply": 62, "san": "Kb7", "hold_ms": 450},
+    {"ply": 63, "san": "Bd5+", "claims": ["check"], "hold_ms": 1200},
+    {"ply": 64, "san": "Kb8", "hold_ms": 600},
+    {"ply": 65, "san": "Rxe8", "claims": ["capture"], "frame": {"mode": "close"}},
+    {"ply": 66, "san": "Nxe8", "claims": ["capture"]},
+    {"ply": 67, "san": "Qc6", "hold_ms": 700},
+    {"ply": 68, "san": "Nd6", "hold_ms": 1500},
+    {"ply": 69, "san": "Qa8#", "claims": ["mate"], "frame": {"mode": "close"}}
+  ],
+  "ending": {"hold_ms": 4500, "return_to_full": false}
+}

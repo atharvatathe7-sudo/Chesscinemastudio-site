@@ -1,0 +1,23 @@
+{
+  "schema": "chess-cinema-plan/1",
+  "game": {"plies": 13, "final_fen": "rn1q1bnr/ppp1kB1p/3p2p1/3NN3/4P3/8/PPPP1PPP/R1BbK2R b KQ - 2 7", "fingerprint": "sha256:5879152c8d428f840ff9919d5cfec074a954590e56d1987cda0c216793c12b7a"},
+  "analysis": {"source": "illustrative (not a Chessis export)"},
+  // whole game
+  "range": {"from_ply": 1, "to_ply": 13},
+  "defaults": {"auto_frame": false},
+  "moves": [
+    {"ply": 1, "san": "e4", "hold_ms": 250},
+    {"ply": 2, "san": "e5", "hold_ms": 250},
+    {"ply": 3, "san": "Nf3", "hold_ms": 250},
+    {"ply": 4, "san": "d6", "hold_ms": 250},
+    {"ply": 5, "san": "Bc4", "hold_ms": 250},
+    {"ply": 6, "san": "Bg4", "hold_ms": 1200, "marks": {"arrows": [{"from": "g4", "to": "d1"}]}},
+    {"ply": 7, "san": "Nc3", "hold_ms": 300},
+    {"ply": 8, "san": "g6", "hold_ms": 1000},
+    {"ply": 9, "san": "Nxe5", "claims": ["capture"], "frame": {"mode": "close", "targets": ["d1"]}, "hold_ms": 2500},
+    {"ply": 10, "san": "Bxd1", "claims": ["capture"], "frame": {"mode": "close"}, "hold_ms": 1800},
+    {"ply": 11, "san": "Bxf7+", "claims": ["capture", "check"], "frame": {"mode": "close"}, "hold_ms": 1800},
+    {"ply": 13, "san": "Nd5#", "claims": ["mate"], "frame": {"mode": "close"}}
+  ],
+  "ending": {"hold_ms": 4000, "return_to_full": true,}
+}

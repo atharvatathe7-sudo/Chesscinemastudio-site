@@ -1,0 +1,12 @@
+{
+  "schema": "chess-cinema-plan/1",
+  "game": {"plies": 13, "final_fen": "rn1q1bnr/ppp1kB1p/3p2p1/3NN3/4P3/8/PPPP1PPP/R1BbK2R b KQ - 2 7", "fingerprint": "sha256:5879152c8d428f840ff9919d5cfec074a954590e56d1987cda0c216793c12b7a"},
+  "analysis": {"source": "illustrative (not a Chessis export)"},
+  "range": {"from_ply": 1, "to_ply": 13},
+  "moves": [
+    {"ply": 9, "san": "Nxe5", "frame": {"mode": "close"}},
+    {"ply": 10, "san": "Bxd1", "frame": {"mode": "close"}},
+    {"ply": 11, "san": "Bxf7+", "frame": {"mode": "close"}},
+    {"ply": 13, "san": "Nd5#", "frame": {"mode": "close"}}
+  ]
+}

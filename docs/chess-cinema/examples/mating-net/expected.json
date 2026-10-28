@@ -1,0 +1,91 @@
+{
+  "about": "Observed by running this packet through Validate and Apply on the application below (story_examples_test.js compares every field). Analysis: illustrative, not a Chessis export.",
+  "app": {
+    "commit": "ff71e1ff86f2c9b52453af72b36f9bc7add54f85",
+    "page_sha256": "2b36098f6beb9981ce733f0000c135f89e5a43ccad58a9dc8b87bf081e079ba5",
+    "capture_fx": "dissolve (default)",
+    "board": "not flipped"
+  },
+  "lint_context": {
+    "target_s": 15,
+    "moments": [
+      63,
+      69
+    ]
+  },
+  "validate": {
+    "result": "valid",
+    "entries": []
+  },
+  "apply": {
+    "result": "applied",
+    "entries": []
+  },
+  "timeline": {
+    "frames": 455,
+    "seconds": 15.17,
+    "ending": "close-up",
+    "columns": [
+      "ply",
+      "start",
+      "land",
+      "end",
+      "holdMs",
+      "holdReason",
+      "camEntry",
+      "camEntryFrames",
+      "camAfter",
+      "camOwn",
+      "camEnding",
+      "camReturn"
+    ],
+    "units": "start/land/end in ms×fps (divide by 1000 for frames); holdMs in ms; camera frames are video frames from 0",
+    "moves": [
+      [57,0,6000,18000,400,"requested","start","","","full","",""],
+      [58,18000,22800,34800,400,"requested","full","","","full","",""],
+      [59,34800,40200,52200,400,"requested","full","","","full","",""],
+      [60,52200,57000,69000,400,"requested","full","","","full","",""],
+      [61,69000,75000,99000,800,"requested","full","","","full","",""],
+      [62,99000,103800,117300,450,"requested","full","","","full","",""],
+      [63,117300,122100,158100,1200,"requested","full","","","full","",""],
+      [64,158100,162900,180900,600,"requested","full","","","full","",""],
+      [65,180900,189300,210300,700,"default","full","","","full","",""],
+      [66,210300,215700,236700,700,"default","full","","","full","",""],
+      [67,236700,241500,262500,700,"requested","full","","","full","",""],
+      [68,262500,267900,312900,1500,"requested","full","","","full","",""],
+      [69,312900,318300,453300,4500,"requested","full","","320-334","close","close-up",""]
+    ]
+  },
+  "camera_note": "One close-up only (the mate); return_to_full false keeps it to the last frame. 33. Rxe8 gets no close-up: it would be the whole board (see negative/w01).",
+  "lint": {
+    "hard": [],
+    "quality": [],
+    "notes": [
+      "N_NO_CONTRAST"
+    ],
+    "metrics": {
+      "frames": 455,
+      "seconds": 15.17,
+      "emphasizedShare": 0.23,
+      "setupMedianMs": 525,
+      "combinations": [
+        [
+          69
+        ]
+      ],
+      "anticipation": [
+        {
+          "strike": 69,
+          "before": 68,
+          "holdMs": 1500,
+          "ratio": 2.86
+        }
+      ],
+      "framedMedianMs": null,
+      "finalHoldMs": 4500,
+      "durationError": 0.01,
+      "reversals": []
+    }
+  },
+  "accepted_quality_warnings": {}
+}
