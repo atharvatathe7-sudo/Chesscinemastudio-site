@@ -407,6 +407,7 @@ button:active, button.active {
         </div>
 
         <label class="small">Arrows / Highlights (selected move)</label>
+        <div class="small" id="planMarksNote" style="display:none;color:#ffd58a;">A story plan is active: the marks shown here and on the board are the plan's (read-only). Your own annotations are kept and come back when you deactivate it.</div>
         <div class="history" id="historyList"></div>
         <div class="hotkeys">Hotkeys: M=Move, A=Arrow, H=Highlight, C=Clear, F=Flip. Space = Play.</div>
       </div>
@@ -2273,7 +2274,7 @@ document.getElementById('loadSample').addEventListener('click', ()=>{
 });
 // An export keeps the orientation it started with: its piece paths and camera
 // are fixed at the start, so a flip mid-export would mix orientations in the file.
-document.getElementById('flip').addEventListener('click', ()=>{ if(exportInProgress){ showMessage('Wait for the export to finish.', 'error'); return; } boardFlipped = !boardFlipped; drawBoard(); redrawOverlay(); });
+document.getElementById('flip').addEventListener('click', ()=>{ if(exportInProgress){ showMessage('Wait for the export to finish.', 'error'); return; } boardFlipped = !boardFlipped; drawBoard(); redrawOverlay(); try { renderPlanTimelineIfChanged(); } catch(e){ console.error('Story plan: timeline view failed:', e); } });
 document.getElementById('captureFx').addEventListener('change', (e)=>{ captureEffect = e.target.value; updateSequenceControls(); });
 document.getElementById('autoFrame').addEventListener('change', (e)=>{ autoFrameEvents = e.target.checked; updateSequenceControls(); });
 // Play/Export operate on the ACTIVE record — the selected timeline move if
@@ -2396,7 +2397,7 @@ function updateSequenceControls(){
   let canRun = !r.error, tooLong = false;
   if(r.error){ info.textContent = r.error; }
   else {
-    const plan = sequencePlan(r.records, EXPORT_FPS, captureEffect, r.autoFrame, r.holds);
+    const plan = sequencePlan(r.records, EXPORT_FPS, captureEffect, r.autoFrame, r.planOpts);
     const n = r.records.length, first = plyLabel(r.records[0]), last = plyLabel(r.records[n - 1]);
     info.textContent = (r.fromPlan ? `Story plan active (automatic close framing ${r.autoFrame ? 'on' : 'off'}). ` : '') +
                        `${n} ${n === 1 ? 'ply' : 'plies'}: ${first}${n > 1 ? ' → ' + last : ''}. Starts from the position before ${first}, ends after ${last}. ` +
@@ -2410,7 +2411,7 @@ function updateSequenceControls(){
   // the user's own choices are kept, untouched, for when it is deactivated.
   const planActive = !!storyPlanBound();
   fromSel.disabled = toSel.disabled = playing || !visible || planActive;
-  document.getElementById('captureFx').disabled = playing;
+  document.getElementById('captureFx').disabled = playing || planActive;   // frozen in the plan (Phase 4B.2)
   document.getElementById('autoFrame').disabled = playing || planActive;
   document.getElementById('playSequence').disabled = !canRun || playing || exportInProgress;
   document.getElementById('stopSequence').disabled = !playing;
@@ -2470,7 +2471,7 @@ function playSequence(){
   if(checkStoryPlanBinding()) return;
   const r = sequenceInputs();
   if(r.error){ showMessage(r.error, 'error'); return; }
-  const plan = sequencePlan(r.records, EXPORT_FPS, captureEffect, r.autoFrame, r.holds);
+  const plan = sequencePlan(r.records, EXPORT_FPS, captureEffect, r.autoFrame, r.planOpts);
   const run = { plan, records: r.records, raf: null, landed: 0, before: selectedPly };
   sequencePlayback.state = 'playing'; sequencePlayback.run = run;
   // Show the position before the first ply.
@@ -2530,7 +2531,7 @@ document.getElementById('exportSequence').addEventListener('click', ()=>{
   if(checkStoryPlanBinding()) return;
   const r = sequenceInputs();
   if(r.error){ showMessage(r.error, 'error'); return; }
-  exportMovesAsWebM(r.records, { fps: EXPORT_FPS, button: 'exportSequence', autoFrame: r.autoFrame, holds: r.holds });
+  exportMovesAsWebM(r.records, { fps: EXPORT_FPS, button: 'exportSequence', autoFrame: r.autoFrame, planOpts: r.planOpts });
 });
 document.getElementById('cancelExport').addEventListener('click', ()=>{ if(cancelActiveExport) cancelActiveExport(); });
 // While a sequence plays, controls that would change the game, the selection,
@@ -2595,7 +2596,12 @@ function updateAnnotationPanel(){
   if(!labelEl || !annSel) return;
   buildClassificationOptions();
   const rec = getActiveRecord();
-  if(storyEl) storyEl.textContent = (rec && rec.storyTargets.length) ? rec.storyTargets.join(' ') : 'none';
+  // While a story plan is active the panel shows the plan's marks, read-only
+  // (Phase 4B.2); the user's own stay untouched on the record.
+  const plan = storyPlanBound(), shown = storyPlanDisplayRecord(rec);
+  if(storyEl) storyEl.textContent = (shown && shown.storyTargets.length) ? shown.storyTargets.join(' ') : 'none';
+  const note = document.getElementById('planMarksNote');
+  if(note) note.style.display = plan ? '' : 'none';
   if(!rec){
     labelEl.textContent = 'No move selected';
     annSel.value = ''; annSel.disabled = true;
@@ -2605,8 +2611,8 @@ function updateAnnotationPanel(){
   const side = rec.color === 'w' ? '.' : '...';
   const live = rec.ply === historyPointer ? ' (live)' : '';
   labelEl.textContent = `Move ${moveNum}${side} ${rec.san || rec.to}${live}`;
-  annSel.disabled = false;
-  annSel.value = rec.annotation || '';
+  annSel.disabled = !!plan;
+  annSel.value = shown.annotation || '';
 }
 
 /* history UI (Original, now move-scoped — Phase 3) */
@@ -2615,12 +2621,13 @@ function updateHistory(){
   updateTimeline();
   updateSequenceControls();
   updateAnnotationPanel();
-  const rec = getActiveRecord();
+  const rec = storyPlanDisplayRecord(getActiveRecord());   // the active story plan's marks, read-only (Phase 4B.2)
+  const readOnly = !!storyPlanBound();
   const activeArrows = rec ? rec.arrows : [];
   const activeHighlights = rec ? rec.highlights : [];
   const el=document.getElementById('historyList'); el.innerHTML='';
-  activeArrows.forEach((a,i)=>{ const d=document.createElement('div'); d.style.padding='6px'; d.style.borderBottom='1px solid rgba(255,255,255,0.03)'; d.innerHTML=`Arrow ${i+1}: ${a.from} → ${a.to} <button data-i='${i}' style="padding: 2px 5px; font-size: 10px; float: right;">X</button>`; el.appendChild(d); });
-  activeHighlights.forEach((h,i)=>{ const d=document.createElement('div'); d.style.padding='6px'; d.style.borderBottom='1px solid rgba(255,255,255,0.03)'; d.innerHTML=`Highlight ${i+1}: ${h.sq} <button data-i='h${i}' style="padding: 2px 5px; font-size: 10px; float: right;">X</button>`; el.appendChild(d); });
+  activeArrows.forEach((a,i)=>{ const d=document.createElement('div'); d.style.padding='6px'; d.style.borderBottom='1px solid rgba(255,255,255,0.03)'; d.innerHTML=`Arrow ${i+1}: ${a.from} → ${a.to}` + (readOnly ? ' (plan)' : ` <button data-i='${i}' style="padding: 2px 5px; font-size: 10px; float: right;">X</button>`); el.appendChild(d); });
+  activeHighlights.forEach((h,i)=>{ const d=document.createElement('div'); d.style.padding='6px'; d.style.borderBottom='1px solid rgba(255,255,255,0.03)'; d.innerHTML=`Highlight ${i+1}: ${h.sq}` + (readOnly ? ' (plan)' : ` <button data-i='h${i}' style="padding: 2px 5px; font-size: 10px; float: right;">X</button>`); el.appendChild(d); });
   el.querySelectorAll('button').forEach(b=>{ b.onclick=()=>{ if(storyPlanBlocksEditing()) return; const id=b.dataset.i; const rec2=getActiveRecord(); if(!rec2) return; if(id.startsWith('h')){ rec2.highlights.splice(parseInt(id.slice(1)),1); } else { rec2.arrows.splice(parseInt(id),1); } redrawOverlay(); updateHistory(); }; });
   markPlanReportStale();   // Phase 4A: a shown plan report no longer describes a changed game
 }
@@ -2849,7 +2856,10 @@ function moveFramingBoxes(moveRec, autoFrame){
   // the whole board.
   // An automatically framed move (Phase 3B) takes the same camera as a
   // marked one, with nothing but its own path to frame.
-  const hasAnnotations = recHighlights.length > 0 || recArrows.length > 0 || hasStoryTargets || !!autoFrame;
+  // A story plan's frame.mode "full" (Phase 4B.2) keeps the whole board for the
+  // move: no zoom from its marks (they are still drawn) and no check framing.
+  const forceFull = moveRec.planFrame === 'full';
+  const hasAnnotations = !forceFull && (recHighlights.length > 0 || recArrows.length > 0 || hasStoryTargets || !!autoFrame);
   const annBox  = hasAnnotations ? cap(Math.max(annW, annH), MIN_BOX, LOGICAL_SIZE) : 0;
   // DIRECTORIAL RULE: piece movement alone must never trigger cinematic
   // camera behaviour. Only an explicit creator marker — a Story Target,
@@ -2863,7 +2873,7 @@ function moveFramingBoxes(moveRec, autoFrame){
   const boxSize = hasAnnotations ? Math.min(LOGICAL_SIZE, Math.max(trajBox, annBox)) : LOGICAL_SIZE;
   // The framing that contains BOTH the landing square and the checked king
   // (boxSize and MIN_BOX are only its floor).
-  const checkFraming = moveRec.checkSquare
+  const checkFraming = (moveRec.checkSquare && !forceFull)
     ? framingForCentres([endCenter, squareCenter(moveRec.checkSquare)], Math.max(MIN_BOX, boxSize))
     : null;
   return { MIN_BOX, trajXs, trajYs, trajW, trajH, annXs, annYs, boxSize, checkFraming, settledBox: checkFraming ? checkFraming.box : boxSize };
@@ -2923,12 +2933,23 @@ function viewingIntervalMs(rec, last){
   const ms = { checkmate: PACE_MATE_MS, check: PACE_CHECK_MS, capture: PACE_CAPTURE_MS, ordinary: PACE_ORDINARY_MS }[moveClass(rec)];
   return last ? Math.max(ms, PACE_FINAL_MS) : ms;
 }
-// `holds` (Phase 4B.1, an applied story plan only; null otherwise): requested
-// viewing intervals { moveMs: { ply: ms }, finalMs } that REPLACE the class
-// interval above (finalMs for the range's last move, the checkmate default
-// included). The structural floors below still apply, so a request can only
-// lengthen what a move needs, never cut into a camera hold or an effect beat.
-function sequencePlan(records, fps, fxKind, autoFrame = false, holds = null){
+// `planOpts` (an applied story plan only; null otherwise):
+//   moveMs { ply: ms }, finalMs (Phase 4B.1) — requested viewing intervals that
+//     REPLACE the class interval above (finalMs for the range's last move, the
+//     checkmate default included). The structural floors below still apply, so
+//     a request can only lengthen what a move needs.
+//   returnToFull (Phase 4B.2) — undefined: as without a plan (a marked
+//     checkmate returns to the full board); true: any ending that is a close-up
+//     returns; false: none does. A return needs room in the final hold: the
+//     close-up settles (Story Targets: 44 frames after landing, otherwise at
+//     most the 15-frame zoom-in), is held 1 s, then eases out over 300 ms; the
+//     final hold is raised to that when shorter (see cameraTransitions).
+// A plan's per-move framing travels on the record (rec.planFrame, story plans
+// only): "close" frames the move as an automatic close-up whatever its class
+// (unless it is marked, or its close-up would settle on the whole board);
+// "full" never frames it automatically (moveFramingBoxes keeps the board).
+// With planOpts each move also says which floor decided its hold (holdReason).
+function sequencePlan(records, fps, fxKind, autoFrame = false, planOpts = null){
   const moves = [];
   let cursor = 0;
   records.forEach((rec, i) => {
@@ -2938,23 +2959,46 @@ function sequencePlan(records, fps, fxKind, autoFrame = false, holds = null){
     const marked = !!((rec.storyTargets && rec.storyTargets.length) || (rec.arrows && rec.arrows.length) ||
                       (rec.highlights && rec.highlights.length) || rec.badge);
     const cls = moveClass(rec);
-    const auto = !!autoFrame && !marked && (cls === 'capture' || cls === 'check') &&
-                 moveFramingBoxes(rec, true).settledBox < LOGICAL_SIZE;
+    const mode = rec.planFrame;
+    const auto = mode === 'full' ? false
+      : mode === 'close' ? !marked && moveFramingBoxes(rec, true).settledBox < LOGICAL_SIZE
+      : !!autoFrame && !marked && (cls === 'capture' || cls === 'check') &&
+        moveFramingBoxes(rec, true).settledBox < LOGICAL_SIZE;
     const fullHold = last || marked || auto;
-    const requested = !holds ? null
-      : (last && holds.finalMs != null) ? holds.finalMs
-      : (holds.moveMs && holds.moveMs[rec.ply] != null) ? holds.moveMs[rec.ply] : null;
+    const requested = !planOpts ? null
+      : (last && planOpts.finalMs != null) ? planOpts.finalMs
+      : (planOpts.moveMs && planOpts.moveMs[rec.ply] != null) ? planOpts.moveMs[rec.ply] : null;
     const viewMs = requested != null ? requested : viewingIntervalMs(rec, last);
-    const hold = Math.max(viewMs * fps,                                                       // ms x fps
-                          fullHold ? hf.total * 1000 : 0,                                     // frames x 1000
-                          auto ? Math.round(AUTO_FRAME_HOLD_MS * fps / 1000) * 1000 : 0,      // frames x 1000
-                          (captureVictim(rec) && fxKind !== 'off') ? hf.FX_FRAMES * 1000 : 0);
+    const floors = [viewMs * fps,                                                    // ms x fps
+                    fullHold ? hf.total * 1000 : 0,                                  // frames x 1000
+                    auto ? Math.round(AUTO_FRAME_HOLD_MS * fps / 1000) * 1000 : 0,   // frames x 1000
+                    (captureVictim(rec) && fxKind !== 'off') ? hf.FX_FRAMES * 1000 : 0];
+    let hold = Math.max(floors[0], floors[1], floors[2], floors[3]);
+    let extra = null;
+    if(planOpts){
+      let returnFloor = 0;
+      if(last){
+        const story = !!(rec.storyTargets && rec.storyTargets.length);
+        const closeEnd = mode !== 'full' && (auto || story || (rec.arrows && rec.arrows.length) || (rec.highlights && rec.highlights.length));
+        const wantReturn = planOpts.returnToFull === undefined ? cls === 'checkmate' : !!planOpts.returnToFull;
+        if(closeEnd && wantReturn){
+          const settle = story ? hf.HOLD_FRAMES + hf.STORY_EASE_FRAMES : Math.round(CAMERA_ZOOM_IN_MS * fps / 1000);
+          returnFloor = (settle + Math.round(MATE_CLOSEUP_MS * fps / 1000) + Math.round(CAMERA_TRANSITION_MS * fps / 1000) - 1) * 1000;
+        }
+      }
+      const reasons = [requested != null ? 'requested' : 'default', 'camera hold', 'close-up minimum', 'capture effect', 'return to full board'];
+      const all = floors.concat([returnFloor]);
+      hold = Math.max(hold, returnFloor);
+      extra = { requestedMs: requested, holdReason: reasons[all.indexOf(hold)], returnRaised: returnFloor > Math.max(floors[0], floors[1], floors[2], floors[3]) };
+    }
     const start = cursor, land = start + T * fps, end = land + hold;
-    moves.push({ rec, T, cls, viewMs, holdMs: hold / fps, fullHold, auto, start, land, end, landFrame: Math.ceil(land / 1000) });
+    moves.push(Object.assign({ rec, T, cls, viewMs, holdMs: hold / fps, fullHold, auto, start, land, end, landFrame: Math.ceil(land / 1000) }, extra));
     cursor = end;
   });
   const totalFrames = Math.ceil(cursor / 1000) + 1;   // + the closing frame
-  return { fps, moves, totalFrames, durationMs: totalFrames * 1000 / fps };
+  const out = { fps, moves, totalFrames, durationMs: totalFrames * 1000 / fps };
+  if(planOpts){ out.planMode = true; out.returnToFull = planOpts.returnToFull; }
+  return out;
 }
 // Which move frame n belongs to, and its phase: movement progress t (holdIndex
 // -1) or holdIndex >= 0 counted from that move's landing frame. The closing
@@ -3029,7 +3073,9 @@ function cameraTransitions(plan, clips){
     if(same(from, to)) continue;
     const nx = plan.moves[k + 1], nxEnd = k + 1 < last ? Math.ceil(nx.end / 1000) : plan.totalFrames;
     const zoom = frames(CAMERA_ZOOM_IN_MS);
-    if((!plan.moves[k].fullHold || plan.moves[k].auto) && (nx.rec.storyTargets.length || nx.auto) && same(from, FULL) && nx.landFrame + zoom < nxEnd){
+    // (A story plan's "full" move keeps the whole board even when it carries
+    // marks, so a close-up after it zooms in the same way, Phase 4B.2.)
+    if((!plan.moves[k].fullHold || plan.moves[k].auto || plan.moves[k].rec.planFrame === 'full') && (nx.rec.storyTargets.length || nx.auto) && same(from, FULL) && nx.landFrame + zoom < nxEnd){
       for(let n = next; n <= nx.landFrame; n++) crops.set(n, FULL);
       for(let h = 1; h < zoom; h++) crops.set(nx.landFrame + h, lerpCrop(FULL, cropOf(nx.landFrame + h), easeInOutCubic(h / zoom)));
       bridged = false;
@@ -3037,7 +3083,7 @@ function cameraTransitions(plan, clips){
     }
     // Bridge one quiet move: keep the close-up through it and through the automatic move after it.
     const after = plan.moves[k + 2];
-    if(plan.moves[k].auto && !bridged && !same(from, FULL) && !nx.fullHold && after && after.auto &&
+    if(plan.moves[k].auto && !bridged && !same(from, FULL) && !nx.fullHold && nx.rec.planFrame !== 'full' && after && after.auto &&
        contains(from, clips[k + 1].subjectBox()) && contains(from, clips[k + 2].subjectBox())){
       const afterEnd = k + 2 < last ? Math.ceil(after.end / 1000) : plan.totalFrames;
       for(let n = next; n < afterEnd; n++) crops.set(n, from);
@@ -3057,12 +3103,20 @@ function cameraTransitions(plan, clips){
     if(count < CAMERA_TRANSITION_MIN_FRAMES) continue;
     for(let j = 1; j <= count; j++) crops.set(next - 1 - count + j, lerpCrop(from, to, easeInOutCubic(j / (count + 1))));
   }
-  // A marked checkmate: its own camera ends on a close-up (an unmarked one is
-  // the full board throughout and is left alone).
-  const end = plan.totalFrames - 1, fin = cropOf(end);
-  if(moveClass(plan.moves[last].rec) === 'checkmate' && !same(fin, FULL)){
+  // The ending. A marked checkmate: its own camera ends on a close-up (an
+  // unmarked one is the full board throughout and is left alone), so it returns
+  // to the full board. A story plan (Phase 4B.2) can ask for that return on any
+  // ending that is a close-up (returnToFull true) or for none, a marked
+  // checkmate included (false); with a plan the camera is read as SHOWN
+  // (transitions included), and sequencePlan has made the final hold long
+  // enough for the return to complete.
+  const end = plan.totalFrames - 1;
+  const view = plan.planMode ? shown : cropOf;
+  const fin = view(end);
+  const wantReturn = plan.returnToFull === undefined ? moveClass(plan.moves[last].rec) === 'checkmate' : plan.returnToFull;
+  if(wantReturn && !same(fin, FULL)){
     let settled = end;
-    while(settled - 1 >= plan.moves[last].landFrame && same(cropOf(settled - 1), fin)) settled--;
+    while(settled - 1 >= plan.moves[last].landFrame && same(view(settled - 1), fin)) settled--;
     const out = frames(CAMERA_TRANSITION_MS), fullFrom = settled + frames(MATE_CLOSEUP_MS) + out - 1;
     if(fullFrom <= end){
       for(let j = 1; j < out; j++) crops.set(fullFrom - out + j, lerpCrop(fin, FULL, easeInOutCubic(j / out)));
@@ -3070,6 +3124,271 @@ function cameraTransitions(plan, clips){
     }
   }
   return crops;
+}
+
+/* ---------------- A MOVE'S CAMERA (pure geometry) ----------------
+   The camera of one move in an export: its framing boxes, the movement
+   camera (static, or a tracking shot with a dead zone), the camera stages of
+   its hold (impact / check context, then the Story Target consequence beat),
+   the crop at any point of its timeline (cropAt) and what it must keep in
+   view (subjectBox). Nothing here draws or reads a clock: the same object
+   serves the export renderer (buildMoveClip), the sequence camera track
+   (cameraTrack) and the story plan's inspector, so they cannot disagree.
+   Squares are placed in the CURRENT orientation (squareCenter), as the export
+   always did when it built a move's clip. Phase 4B.2: moved out of
+   buildMoveClip unchanged, except that a move whose plan forces the full board
+   (moveRec.planFrame === 'full') has no check framing (see moveFramingBoxes). */
+function moveCamera(moveRec, autoFrame, fps){
+  const travelType = moveRec.pieceType || moveRec.resultPieceType || 'p';
+  const from = moveRec.from, to = moveRec.to;
+  const secondary = moveRec.secondary || null; // castling's rook: {from,to,type:'r',color}
+  const startCenter = squareCenter(from);
+  const endCenter = squareCenter(to);
+  const secondaryStartCenter = secondary ? squareCenter(secondary.from) : null;
+  const secondaryEndCenter = secondary ? squareCenter(secondary.to) : null;
+
+  // -------------------------------------------------
+  // --- START FINAL FIX (Padding + Context) ---
+  // -------------------------------------------------
+
+  /* ---------------- CAMERA / FRAMING ----------------
+     Two things were wrong here and they compounded each other.
+
+     1. The crop was squared with max(boxW, boxH) and clamped only by the
+        board itself. A vertical move like Qa1-a8 spans ~7 ranks, so boxH
+        reached the full board height and the square crop therefore became
+        the ENTIRE board — the reported "A1->A8 shows the whole board".
+
+     2. The camera centre was pinned exactly to the moving piece
+        (camX = state.x). A piece drawn dead-centre of the crop in every
+        single frame does not appear to move at all: the board slides
+        underneath it instead. That is why the knight's arc "did not
+        behave as intended" — the arc was being rendered correctly and
+        then cancelled out by the camera following it perfectly.
+
+     The fix is to frame the movement rather than chase the piece:
+
+     - The box is sized from the REAL trajectory (pieceTrajectory — the
+       same function that draws each frame, so the camera can never frame
+       something the renderer didn't draw), capped at MAX_TRAJECTORY_BOX
+       so a long move can't escalate to the whole board.
+     - If the whole trajectory fits in that box, the camera is STATIC and
+       the piece visibly travels across a stationary frame. This is the
+       common case and gives the clearest possible origin->path->landing.
+     - Only when the trajectory genuinely exceeds the cap does the camera
+       move, and then it tracks with a DEAD ZONE: it stays put until the
+       piece approaches the edge of frame, so the piece is always moving
+       relative to the frame rather than glued to its centre.
+     - Arrows/highlights get their own, larger allowance (up to the full
+       board): a static annotation can't be revealed by panning, so it
+       must fit. This preserves the existing annotation-aware crop.
+
+     DIRECTORIAL RULE (camera/piece decoupling): everything above — the
+     trajectory-sized box, the tracking dead zone, all of it — only
+     applies once the move has an explicit creator marker: a Story
+     Target, or an arrow/highlight annotation. Piece movement by itself
+     is never enough; an unmarked move keeps the stable full board no
+     matter how far the piece travels. See hasAnnotations/boxSize below.
+  */
+  // The framing boxes (moveFramingBoxes, above: the same numbers sequencePlan
+  // uses to decide whether a move is framed automatically at all).
+  const SQ = LOGICAL_SIZE/8;
+  const { MIN_BOX, trajXs, trajYs, trajW, trajH, annXs, annYs, boxSize, checkFraming } = moveFramingBoxes(moveRec, autoFrame);
+
+  // Centre of the whole framed event (trajectory + annotations).
+  const eventCX = (Math.min(...annXs) + Math.max(...annXs))/2;
+  const eventCY = (Math.min(...annYs) + Math.max(...annYs))/2;
+
+  // Camera path, decided per axis and evaluated from the piece's own eased
+  // progress so camera and piece can never disagree about where we are in
+  // the move.
+  //
+  //  - Axis fits in the frame  -> the camera does not move on that axis.
+  //    The piece travels across a still frame, which is the clearest way
+  //    to read origin -> path -> landing, and covers every short/medium
+  //    move plus anything an annotation widened.
+  //  - Axis does not fit       -> a tracking shot. The camera leads the
+  //    piece at the start and trails it at the end by `inset`, so the
+  //    piece sweeps from one side of the frame to the other while the
+  //    camera covers LESS ground than the piece does. That is what keeps
+  //    the movement visible: a camera that travels exactly as far as the
+  //    piece (or worse, sits on it) renders the piece motionless.
+  const INSET_FRACTION = 0.30;   // piece rests 30% off-centre at each end
+  function cameraPathForAxis(p0, p1, extent, staticCentre){
+    if(extent <= boxSize + 0.5) return [staticCentre, staticCentre];
+    const dir = Math.sign(p1 - p0) || 1;
+    const inset = Math.min(boxSize * INSET_FRACTION, Math.abs(p1 - p0)/2);
+    return [p0 + inset*dir, p1 - inset*dir];
+  }
+  // Castling moves two pieces, so the camera follows their midpoint.
+  const focusStart = secondary
+    ? {x:(startCenter.x + secondaryStartCenter.x)/2, y:(startCenter.y + secondaryStartCenter.y)/2}
+    : startCenter;
+  const focusEnd = secondary
+    ? {x:(endCenter.x + secondaryEndCenter.x)/2, y:(endCenter.y + secondaryEndCenter.y)/2}
+    : endCenter;
+  const [camX0, camX1] = cameraPathForAxis(focusStart.x, focusEnd.x, trajW, eventCX);
+  const [camY0, camY1] = cameraPathForAxis(focusStart.y, focusEnd.y, trajH, eventCY);
+
+  // ---- End-of-move framing (check context) ----
+  // A checking move is a two-beat event: the piece completes its journey,
+  // then the frame settles to make the resulting check readable. During
+  // the hold the camera/box ease toward a framing that contains both the
+  // landing square and the king that is now in check. No effects are
+  // added — this is framing only.
+  const checkSq = moveRec.checkSquare ? squareCenter(moveRec.checkSquare) : null;
+  let holdBox = boxSize, holdCamX = camX1, holdCamY = camY1;
+  if(checkSq && checkFraming){
+    // The framing that contains BOTH the landing square and the checked
+    // king. boxSize acts purely as a FLOOR (with MIN_BOX), so this beat
+    // widens or holds and never tightens back in on the movement framing;
+    // the board is the only ceiling, so a distant king still fits.
+    const f = checkFraming;
+    holdBox = f.box; holdCamX = f.camX; holdCamY = f.camY;
+  }
+
+  // ---- Consequence framing (human Story Targets) ----
+  // The creator marks the squares that make this move matter. The camera
+  // frames the destination TOGETHER with them, so the payoff stays anchored
+  // to the piece that caused it. Nothing is inferred: with no targets there
+  // is no consequence beat at all and the camera behaves exactly as before.
+  const storyCentres = moveRec.storyTargets.map(sq => squareCenter(sq));
+  const storyFraming = storyCentres.length
+    ? framingForCentres([endCenter].concat(storyCentres), MIN_BOX)
+    : null;
+  // PHASE C. Every exported move ends on the same beat: exactly one second
+  // of the finished, fully landed position. Previously this was a
+  // check-dependent 850/260ms that the export ALSO used as its stop
+  // condition, so the camera finished easing into the check framing on the
+  // very frame the recorder was told to stop — the settled check context
+  // existed for about one frame and was effectively never seen. The hold
+  // is now a fixed, deliberately generous beat that is timed from the
+  // LANDING FRAME (not from movement time) and must actually be rendered
+  // before the export may stop; the check framing eases in over its first
+  // part so the rest is a still, readable final state.
+  // (EXPORT_FINAL_HOLD_MS; its frames come from exportHoldFrames().)
+  const { HOLD_FRAMES, SETTLE_FRAMES, STORY_EASE_FRAMES, STORY_HOLD_FRAMES, FX_FRAMES } = exportHoldFrames(moveRec, fps);
+
+  // Frames of the hold spent easing into the check context; the rest are
+  // fully settled. Both are frame counts now, so the check context is
+  // guaranteed to be encoded across real frames instead of whatever
+  // happened to fall inside a wall-clock window.
+
+  // ---------------- CAMERA STAGES AFTER LANDING ----------------
+  // A move can have more than one thing worth showing. The hold is an
+  // ordered list of framings; each stage eases from the previous framing
+  // over `ease` frames and then holds still for `hold` frames, all counted
+  // in schedule frames so the sequence is as deterministic as the movement.
+  //
+  //   stage 1  IMPACT       what just happened where it landed — the check
+  //                         relationship when there is one, otherwise the
+  //                         movement framing held still. This is exactly the
+  //                         previous single-stage behaviour.
+  //   stage 2  CONSEQUENCE  only when the creator marked Story Targets: the
+  //                         camera reframes to the destination plus those
+  //                         squares and holds long enough to read them.
+  //
+  // With no Story Targets the list has exactly one stage whose ease/hold are
+  // the previous SETTLE_FRAMES / HOLD_FRAMES-SETTLE_FRAMES, so a move
+  // without them is frame-for-frame identical to before.
+  const cameraStages = [
+    { box: holdBox, camX: holdCamX, camY: holdCamY,
+      ease: SETTLE_FRAMES, hold: HOLD_FRAMES - SETTLE_FRAMES }
+  ];
+  if(storyFraming){
+    cameraStages.push({ box: storyFraming.box, camX: storyFraming.camX, camY: storyFraming.camY,
+                        ease: STORY_EASE_FRAMES, hold: STORY_HOLD_FRAMES });
+  }
+  const TOTAL_HOLD_FRAMES = cameraStages.reduce((n, st) => n + st.ease + st.hold, 0);
+
+  // The framing at a given hold frame: walk the stages, easing between each
+  // stage's framing and the one before it. Hold frame 0 is the landing
+  // frame, which always sits on the movement framing — so no consequence or
+  // check framing can ever begin before the piece is rendered settled.
+  function framingAtHold(holdIdx, fromBox, fromCamX, fromCamY){
+    let box = fromBox, cx = fromCamX, cy = fromCamY, k = holdIdx;
+    for(const st of cameraStages){
+      if(k <= st.ease){
+        const e = easeInOutCubic(k / st.ease);
+        return { box: box + (st.box - box)*e, camX: cx + (st.camX - cx)*e, camY: cy + (st.camY - cy)*e };
+      }
+      k -= st.ease;
+      if(k <= st.hold) return { box: st.box, camX: st.camX, camY: st.camY };
+      k -= st.hold;
+      box = st.box; cx = st.camX; cy = st.camY;
+    }
+    return { box, camX: cx, camY: cy };
+  }
+
+  // The crop this move's camera shows at a point of its timeline (same
+  // arguments as renderAt), in logical px, inside the board.
+  function cropAt(tIn, holdIndex, reframe){
+    const landed = holdIndex >= 0;
+    // NOT pinned to the piece: a piece held at the exact centre of every
+    // frame reads as motionless while the board slides past it, which is
+    // what made the movement (the knight's arc especially) look like it
+    // wasn't happening. When the whole trajectory fits the frame the
+    // camera simply doesn't move and the piece travels across a static
+    // shot. Otherwise it tracks with a dead zone, so it only gives ground
+    // once the piece nears the edge and the piece still moves relative to
+    // the frame.
+    // The camera advances on the SAME eased progress the piece uses, so
+    // the two never disagree — but over a shorter distance, which is what
+    // makes the piece visibly travel across the frame.
+    const prog = landed ? 1 : pieceTrajectory(travelType, startCenter, endCenter, Math.min(1, tIn)).e;
+    const camX = camX0 + (camX1 - camX0) * prog;
+    const camY = camY0 + (camY1 - camY0) * prog;
+
+    // While the piece is travelling the camera is the movement camera. Once
+    // landed, walk the camera stages (impact, then the consequence beat when
+    // the creator marked Story Targets). Each stage eases in and is then
+    // HELD still, so a framing never arrives just as the recorder stops.
+    const framing = (landed && reframe)
+      ? framingAtHold(holdIndex, boxSize, camX, camY)
+      : { box: boxSize, camX, camY };
+    const frameBox = framing.box, frameCamX = framing.camX, frameCamY = framing.camY;
+
+    // Compute crop (ensure crop fits inside board)
+    const half = frameBox / 2;
+    const sx = Math.max(0, Math.min(LOGICAL_SIZE - frameBox, frameCamX - half));
+    const sy = Math.max(0, Math.min(LOGICAL_SIZE - frameBox, frameCamY - half));
+    return { sx, sy, box: frameBox };
+  }
+
+  const fxVictim = captureVictim(moveRec);   // subjectBox keeps an en passant victim in view
+
+  // What this move must keep in view (logical px, [minX, minY, maxX,
+  // maxY]): the drawn piece(s) along the whole path, the landing square,
+  // an en passant victim's square and a checked king's square — on the
+  // board, which is all a crop can show (a piece on an edge square is
+  // drawn slightly past it).
+  function subjectBox(){
+    const xs = trajXs.slice(), ys = trajYs.slice();
+    for(const sq of [to, fxVictim && fxVictim.sq, moveRec.checkSquare]){
+      if(!sq) continue;
+      const c = squareCenter(sq);
+      xs.push(c.x - SQ/2, c.x + SQ/2); ys.push(c.y - SQ/2, c.y + SQ/2);
+    }
+    const onBoard = (v) => Math.max(0, Math.min(LOGICAL_SIZE, v));
+    return [onBoard(Math.min(...xs)), onBoard(Math.min(...ys)), onBoard(Math.max(...xs)), onBoard(Math.max(...ys))];
+  }
+
+  return { cropAt, subjectBox, TOTAL_HOLD_FRAMES, FX_FRAMES };
+}
+
+/* The camera of a whole sequence, frame by frame (Phase 4B.2): each move's
+   own camera (moveCamera) and the transitions between moves
+   (cameraTransitions), resolved into the crop every frame shows. The export
+   renders exactly these crops; the story plan inspector reads them. */
+function cameraTrack(records, plan){
+  const cams = records.map((rec, i) => moveCamera(rec, plan.moves[i].auto, plan.fps));
+  const transitions = cameraTransitions(plan, cams);
+  const crops = new Array(plan.totalFrames);
+  for(let n = 0; n < plan.totalFrames; n++){
+    const f = planFrame(plan, n);
+    crops[n] = transitions.get(n) || cams[f.k].cropAt(f.t, f.holdIndex, plan.moves[f.k].fullHold);
+  }
+  return { cams, crops };
 }
 
 /* Minimal WebM (Matroska) writer for one VP9 video track, optionally with an
@@ -3212,8 +3531,8 @@ function exportMovesAsWebM(records, opts={fps:EXPORT_FPS}){
     const fps = opts.fps || EXPORT_FPS;
     // The whole timeline is known before anything is allocated or encoded.
     // A story plan's sequence brings its own framing setting and hold
-    // requests (opts.autoFrame / opts.holds); every other export is unchanged.
-    const plan = sequencePlan(records, fps, captureEffect, opts.autoFrame === undefined ? autoFrameEvents : opts.autoFrame, opts.holds || null);
+    // requests (opts.autoFrame / opts.planOpts); every other export is unchanged.
+    const plan = sequencePlan(records, fps, captureEffect, opts.autoFrame === undefined ? autoFrameEvents : opts.autoFrame, opts.planOpts || null);
     if(plan.totalFrames > MAX_EXPORT_FRAMES){
       showMessage(`That range makes a ${Math.round(plan.durationMs / 1000)} s video (${plan.totalFrames} frames). ` +
                   `The longest export supported is ${MAX_EXPORT_FRAMES} frames (${MAX_EXPORT_FRAMES / fps} s) — choose a shorter range.`, 'error', 8000);
@@ -3247,7 +3566,7 @@ function exportMovesAsWebM(records, opts={fps:EXPORT_FPS}){
     // Everything below is per move: its snapshots, camera and hold stages.
     // buildMoveClip(record).renderAt(...) draws that move at a point of its
     // timeline; the sequence timeline decides which move and which point.
-    function buildMoveClip(moveRec, autoFrame){
+    function buildMoveClip(moveRec, autoFrame, cam){
       // prepare snapshot and moving info — moveRec is now the rich per-ply
       // record built by buildMoveRecord() (see MOVE APPLY section), so the
       // moving piece's *post-move* type/color is known directly (fixes
@@ -3325,127 +3644,10 @@ function exportMovesAsWebM(records, opts={fps:EXPORT_FPS}){
       // in the exported clip as it does on screen.
       const duration = computeMoveDuration(moveRec);
 
-      // -------------------------------------------------
-      // --- START FINAL FIX (Padding + Context) ---
-      // -------------------------------------------------
-
-      /* ---------------- CAMERA / FRAMING ----------------
-         Two things were wrong here and they compounded each other.
-
-         1. The crop was squared with max(boxW, boxH) and clamped only by the
-            board itself. A vertical move like Qa1-a8 spans ~7 ranks, so boxH
-            reached the full board height and the square crop therefore became
-            the ENTIRE board — the reported "A1->A8 shows the whole board".
-
-         2. The camera centre was pinned exactly to the moving piece
-            (camX = state.x). A piece drawn dead-centre of the crop in every
-            single frame does not appear to move at all: the board slides
-            underneath it instead. That is why the knight's arc "did not
-            behave as intended" — the arc was being rendered correctly and
-            then cancelled out by the camera following it perfectly.
-
-         The fix is to frame the movement rather than chase the piece:
-
-         - The box is sized from the REAL trajectory (pieceTrajectory — the
-           same function that draws each frame, so the camera can never frame
-           something the renderer didn't draw), capped at MAX_TRAJECTORY_BOX
-           so a long move can't escalate to the whole board.
-         - If the whole trajectory fits in that box, the camera is STATIC and
-           the piece visibly travels across a stationary frame. This is the
-           common case and gives the clearest possible origin->path->landing.
-         - Only when the trajectory genuinely exceeds the cap does the camera
-           move, and then it tracks with a DEAD ZONE: it stays put until the
-           piece approaches the edge of frame, so the piece is always moving
-           relative to the frame rather than glued to its centre.
-         - Arrows/highlights get their own, larger allowance (up to the full
-           board): a static annotation can't be revealed by panning, so it
-           must fit. This preserves the existing annotation-aware crop.
-
-         DIRECTORIAL RULE (camera/piece decoupling): everything above — the
-         trajectory-sized box, the tracking dead zone, all of it — only
-         applies once the move has an explicit creator marker: a Story
-         Target, or an arrow/highlight annotation. Piece movement by itself
-         is never enough; an unmarked move keeps the stable full board no
-         matter how far the piece travels. See hasAnnotations/boxSize below.
-      */
-      // The framing boxes (moveFramingBoxes, above: the same numbers sequencePlan
-      // uses to decide whether a move is framed automatically at all).
-      const SQ = LOGICAL_SIZE/8;
-      const { MIN_BOX, trajXs, trajYs, trajW, trajH, annXs, annYs, boxSize, checkFraming } = moveFramingBoxes(moveRec, autoFrame);
-
-      // Centre of the whole framed event (trajectory + annotations).
-      const eventCX = (Math.min(...annXs) + Math.max(...annXs))/2;
-      const eventCY = (Math.min(...annYs) + Math.max(...annYs))/2;
-
-      // Camera path, decided per axis and evaluated from the piece's own eased
-      // progress so camera and piece can never disagree about where we are in
-      // the move.
-      //
-      //  - Axis fits in the frame  -> the camera does not move on that axis.
-      //    The piece travels across a still frame, which is the clearest way
-      //    to read origin -> path -> landing, and covers every short/medium
-      //    move plus anything an annotation widened.
-      //  - Axis does not fit       -> a tracking shot. The camera leads the
-      //    piece at the start and trails it at the end by `inset`, so the
-      //    piece sweeps from one side of the frame to the other while the
-      //    camera covers LESS ground than the piece does. That is what keeps
-      //    the movement visible: a camera that travels exactly as far as the
-      //    piece (or worse, sits on it) renders the piece motionless.
-      const INSET_FRACTION = 0.30;   // piece rests 30% off-centre at each end
-      function cameraPathForAxis(p0, p1, extent, staticCentre){
-        if(extent <= boxSize + 0.5) return [staticCentre, staticCentre];
-        const dir = Math.sign(p1 - p0) || 1;
-        const inset = Math.min(boxSize * INSET_FRACTION, Math.abs(p1 - p0)/2);
-        return [p0 + inset*dir, p1 - inset*dir];
-      }
-      // Castling moves two pieces, so the camera follows their midpoint.
-      const focusStart = secondary
-        ? {x:(startCenter.x + secondaryStartCenter.x)/2, y:(startCenter.y + secondaryStartCenter.y)/2}
-        : startCenter;
-      const focusEnd = secondary
-        ? {x:(endCenter.x + secondaryEndCenter.x)/2, y:(endCenter.y + secondaryEndCenter.y)/2}
-        : endCenter;
-      const [camX0, camX1] = cameraPathForAxis(focusStart.x, focusEnd.x, trajW, eventCX);
-      const [camY0, camY1] = cameraPathForAxis(focusStart.y, focusEnd.y, trajH, eventCY);
-
-      // ---- End-of-move framing (check context) ----
-      // A checking move is a two-beat event: the piece completes its journey,
-      // then the frame settles to make the resulting check readable. During
-      // the hold the camera/box ease toward a framing that contains both the
-      // landing square and the king that is now in check. No effects are
-      // added — this is framing only.
-      const checkSq = moveRec.checkSquare ? squareCenter(moveRec.checkSquare) : null;
-      let holdBox = boxSize, holdCamX = camX1, holdCamY = camY1;
-      if(checkSq){
-        // The framing that contains BOTH the landing square and the checked
-        // king. boxSize acts purely as a FLOOR (with MIN_BOX), so this beat
-        // widens or holds and never tightens back in on the movement framing;
-        // the board is the only ceiling, so a distant king still fits.
-        const f = checkFraming;
-        holdBox = f.box; holdCamX = f.camX; holdCamY = f.camY;
-      }
-
-      // ---- Consequence framing (human Story Targets) ----
-      // The creator marks the squares that make this move matter. The camera
-      // frames the destination TOGETHER with them, so the payoff stays anchored
-      // to the piece that caused it. Nothing is inferred: with no targets there
-      // is no consequence beat at all and the camera behaves exactly as before.
-      const storyCentres = moveRec.storyTargets.map(sq => squareCenter(sq));
-      const storyFraming = storyCentres.length
-        ? framingForCentres([endCenter].concat(storyCentres), MIN_BOX)
-        : null;
-      // PHASE C. Every exported move ends on the same beat: exactly one second
-      // of the finished, fully landed position. Previously this was a
-      // check-dependent 850/260ms that the export ALSO used as its stop
-      // condition, so the camera finished easing into the check framing on the
-      // very frame the recorder was told to stop — the settled check context
-      // existed for about one frame and was effectively never seen. The hold
-      // is now a fixed, deliberately generous beat that is timed from the
-      // LANDING FRAME (not from movement time) and must actually be rendered
-      // before the export may stop; the check framing eases in over its first
-      // part so the rest is a still, readable final state.
-      // (EXPORT_FINAL_HOLD_MS; its frames come from exportHoldFrames().)
-      const { HOLD_FRAMES, SETTLE_FRAMES, STORY_EASE_FRAMES, STORY_HOLD_FRAMES, FX_FRAMES } = exportHoldFrames(moveRec, fps);
+      // The camera of this move (moveCamera: the geometry, shared with the
+      // camera track and the story plan inspector).
+      cam = cam || moveCamera(moveRec, autoFrame, fps);
+      const { cropAt, TOTAL_HOLD_FRAMES, FX_FRAMES } = cam;
 
       // --- CONTEXT FIX: These functions are now restored ---
       // These functions are helpers *inside* exportLastMoveAsWebM
@@ -3573,56 +3775,6 @@ function exportMovesAsWebM(records, opts={fps:EXPORT_FPS}){
       const fxVictim = captureVictim(moveRec);
       const fxSeed   = fxVictim ? fxSeedFor(moveRec, fxVictim.sq) : 0;
       const fxDir    = captureDriftDir(moveRec);
-      // Frames of the hold spent easing into the check context; the rest are
-      // fully settled. Both are frame counts now, so the check context is
-      // guaranteed to be encoded across real frames instead of whatever
-      // happened to fall inside a wall-clock window.
-
-      // ---------------- CAMERA STAGES AFTER LANDING ----------------
-      // A move can have more than one thing worth showing. The hold is an
-      // ordered list of framings; each stage eases from the previous framing
-      // over `ease` frames and then holds still for `hold` frames, all counted
-      // in schedule frames so the sequence is as deterministic as the movement.
-      //
-      //   stage 1  IMPACT       what just happened where it landed — the check
-      //                         relationship when there is one, otherwise the
-      //                         movement framing held still. This is exactly the
-      //                         previous single-stage behaviour.
-      //   stage 2  CONSEQUENCE  only when the creator marked Story Targets: the
-      //                         camera reframes to the destination plus those
-      //                         squares and holds long enough to read them.
-      //
-      // With no Story Targets the list has exactly one stage whose ease/hold are
-      // the previous SETTLE_FRAMES / HOLD_FRAMES-SETTLE_FRAMES, so a move
-      // without them is frame-for-frame identical to before.
-      const cameraStages = [
-        { box: holdBox, camX: holdCamX, camY: holdCamY,
-          ease: SETTLE_FRAMES, hold: HOLD_FRAMES - SETTLE_FRAMES }
-      ];
-      if(storyFraming){
-        cameraStages.push({ box: storyFraming.box, camX: storyFraming.camX, camY: storyFraming.camY,
-                            ease: STORY_EASE_FRAMES, hold: STORY_HOLD_FRAMES });
-      }
-      const TOTAL_HOLD_FRAMES = cameraStages.reduce((n, st) => n + st.ease + st.hold, 0);
-
-      // The framing at a given hold frame: walk the stages, easing between each
-      // stage's framing and the one before it. Hold frame 0 is the landing
-      // frame, which always sits on the movement framing — so no consequence or
-      // check framing can ever begin before the piece is rendered settled.
-      function framingAtHold(holdIdx, fromBox, fromCamX, fromCamY){
-        let box = fromBox, cx = fromCamX, cy = fromCamY, k = holdIdx;
-        for(const st of cameraStages){
-          if(k <= st.ease){
-            const e = easeInOutCubic(k / st.ease);
-            return { box: box + (st.box - box)*e, camX: cx + (st.camX - cx)*e, camY: cy + (st.camY - cy)*e };
-          }
-          k -= st.ease;
-          if(k <= st.hold) return { box: st.box, camX: st.camX, camY: st.camY };
-          k -= st.hold;
-          box = st.box; cx = st.camX; cy = st.camY;
-        }
-        return { box, camX: cx, camY: cy };
-      }
 
       // Renders this move onto exportCanvas at one point of its timeline:
       // movement progress t (holdIndex -1), or holdIndex >= 0 frames after its
@@ -3718,58 +3870,8 @@ function exportMovesAsWebM(records, opts={fps:EXPORT_FPS}){
         );
       }
 
-      // The crop this move's camera shows at a point of its timeline (same
-      // arguments as renderAt), in logical px, inside the board.
-      function cropAt(tIn, holdIndex, reframe){
-        const landed = holdIndex >= 0;
-        // NOT pinned to the piece: a piece held at the exact centre of every
-        // frame reads as motionless while the board slides past it, which is
-        // what made the movement (the knight's arc especially) look like it
-        // wasn't happening. When the whole trajectory fits the frame the
-        // camera simply doesn't move and the piece travels across a static
-        // shot. Otherwise it tracks with a dead zone, so it only gives ground
-        // once the piece nears the edge and the piece still moves relative to
-        // the frame.
-        // The camera advances on the SAME eased progress the piece uses, so
-        // the two never disagree — but over a shorter distance, which is what
-        // makes the piece visibly travel across the frame.
-        const prog = landed ? 1 : pieceTrajectory(travelType, startCenter, endCenter, Math.min(1, tIn)).e;
-        const camX = camX0 + (camX1 - camX0) * prog;
-        const camY = camY0 + (camY1 - camY0) * prog;
 
-        // While the piece is travelling the camera is the movement camera. Once
-        // landed, walk the camera stages (impact, then the consequence beat when
-        // the creator marked Story Targets). Each stage eases in and is then
-        // HELD still, so a framing never arrives just as the recorder stops.
-        const framing = (landed && reframe)
-          ? framingAtHold(holdIndex, boxSize, camX, camY)
-          : { box: boxSize, camX, camY };
-        const frameBox = framing.box, frameCamX = framing.camX, frameCamY = framing.camY;
-
-        // Compute crop (ensure crop fits inside board)
-        const half = frameBox / 2;
-        const sx = Math.max(0, Math.min(LOGICAL_SIZE - frameBox, frameCamX - half));
-        const sy = Math.max(0, Math.min(LOGICAL_SIZE - frameBox, frameCamY - half));
-        return { sx, sy, box: frameBox };
-      }
-
-      // What this move must keep in view (logical px, [minX, minY, maxX,
-      // maxY]): the drawn piece(s) along the whole path, the landing square,
-      // an en passant victim's square and a checked king's square — on the
-      // board, which is all a crop can show (a piece on an edge square is
-      // drawn slightly past it).
-      function subjectBox(){
-        const xs = trajXs.slice(), ys = trajYs.slice();
-        for(const sq of [to, fxVictim && fxVictim.sq, moveRec.checkSquare]){
-          if(!sq) continue;
-          const c = squareCenter(sq);
-          xs.push(c.x - SQ/2, c.x + SQ/2); ys.push(c.y - SQ/2, c.y + SQ/2);
-        }
-        const onBoard = (v) => Math.max(0, Math.min(LOGICAL_SIZE, v));
-        return [onBoard(Math.min(...xs)), onBoard(Math.min(...ys)), onBoard(Math.max(...xs)), onBoard(Math.max(...ys))];
-      }
-
-      return { renderAt, cropAt, subjectBox };
+      return { renderAt, cropAt, subjectBox: cam.subjectBox };
     }
 
     // ---------------- FRAME SCHEDULE: ENDPOINT RULE ----------------
@@ -3786,12 +3888,15 @@ function exportMovesAsWebM(records, opts={fps:EXPORT_FPS}){
     //             final framing
     // For one move: ceil(T*fps/1000) movement frames + the hold + 1, exactly
     // as before. The file is TOTAL_FRAMES*1000/fps ms long on any machine.
-    const clips = records.map((rec, i) => buildMoveClip(rec, plan.moves[i].auto));
-    const transitions = cameraTransitions(plan, clips);
+    // The camera is the sequence's camera track (cameraTrack): every frame is
+    // rendered with the crop the track gives it, the same crops the story plan
+    // inspector shows.
+    const track = cameraTrack(records, plan);
+    const clips = records.map((rec, i) => buildMoveClip(rec, plan.moves[i].auto, track.cams[i]));
     const TOTAL_FRAMES = plan.totalFrames;
     function renderFrame(n){
       const f = planFrame(plan, n);
-      clips[f.k].renderAt(f.t, f.holdIndex, plan.moves[f.k].fullHold, transitions.get(n));
+      clips[f.k].renderAt(f.t, f.holdIndex, plan.moves[f.k].fullHold, track.crops[n]);
     }
 
     // A failure anywhere after encoding/recording started aborts cleanly: the
@@ -4086,8 +4191,12 @@ function exportMovesAsWebM(records, opts={fps:EXPORT_FPS}){
    active: annotation editing and single-move Play/Export Animation are
    refused; outside its range no marks are shown; a change to the loaded game
    deactivates it. No persistence: a reload drops it.
-   Not executed yet (reported, and refused by Apply): frame.mode "close" /
-   "full", ending.return_to_full: true.
+   Phase 4B.2: frame.mode "close" / "full" (per move, carried on the
+   effective record as planFrame) and ending.return_to_full are executed;
+   Capture FX is frozen at Apply (the selector is disabled while a plan is
+   active); the annotation panel shows the plan's marks read-only; the
+   inspector shows each move's camera from the same camera track the export
+   renders (cameraTrack).
    Limits are provisional. Duplicate keys inside a JSON object are not
    detected (JSON.parse keeps the last one). */
 const PLAN_SCHEMA_ID = 'chess-cinema-plan/1';
@@ -4172,6 +4281,22 @@ async function planFingerprint(facts){
   return 'sha256:' + Array.from(new Uint8Array(d), b => b.toString(16).padStart(2, '0')).join('');
 }
 
+// Why the game fingerprint cannot be computed on this page (Web Crypto's SHA-256
+// is only offered to secure pages), for E_FINGERPRINT_UNAVAILABLE.
+function planFingerprintProblem(){
+  if(!window.isSecureContext) return { message: 'This page is not a secure context (it was opened over plain http), so the browser does not offer the SHA-256 the game fingerprint needs.', hint: 'Open Chess Cinema over https (the published site) or as a local file, then try again.' };
+  if(!(window.crypto && crypto.subtle && crypto.subtle.digest)) return { message: 'This browser does not provide crypto.subtle (Web Crypto), which the game fingerprint needs.', hint: 'Use a current version of Chrome, Edge, Firefox or Safari.' };
+  return { message: 'The browser could not compute the game fingerprint (Web Crypto failed).', hint: 'Reload the page and try again.' };
+}
+// What decided a move's hold (sequencePlan holdReason), for W_HOLD_RAISED and the inspector.
+const PLAN_HOLD_REASONS = {
+  'camera hold': 'the camera hold of a marked move (1 s; about 2.5 s with Story Targets)',
+  'close-up minimum': 'the 1.8 s minimum of a close-up',
+  'capture effect': 'the Capture FX beat (0.5 s)',
+  'return to full board': 'room for the return to the full board (the close-up settles, holds 1 s, then eases out over 300 ms)',
+  'requested': 'as requested', 'default': 'the default for the move'
+};
+
 // ctx (all optional): facts / factsError — the game as read before any await;
 // fingerprint — the loaded game's (null: could not be computed); forApply —
 // a missing fingerprint and what cannot be executed yet are errors, not warnings.
@@ -4189,8 +4314,6 @@ function validateStoryPlan(text, ctx = {}){
   };
   const ptr = (k) => '/' + String(k).replace(/~/g, '~0').replace(/\//g, '~1');
   const finish = () => { out.valid = !out.entries.some(e => e.severity === 'error'); return out; };
-  const notYet = (path, what) => add(ctx.forApply ? 'error' : 'warning', ctx.forApply ? 'E_NOT_EXECUTABLE' : 'W_NOT_EXECUTABLE', path,
-                                     `${what} is valid but not executed in this version.`, ctx.forApply ? 'Remove it to apply the plan.' : 'Apply will refuse it.');
 
   // 1. Size, JSON, schema id.
   const raw = String(text == null ? '' : text);
@@ -4307,10 +4430,14 @@ function validateStoryPlan(text, ctx = {}){
     else { check('final', 'Final position', 'failed', `game ${planFen4(facts.final)}`); add('error', 'E_GAME_MISMATCH', '/game/final_fen', `After ply ${facts.visible} the loaded game shows ${planFen4(facts.final)}, not ${planFen4(g.final_fen)}.`, 'Positions are compared on placement, side to move, castling and en passant.'); }
   } else { check('final', 'Final position', 'not checked', 'the plan gives no final_fen'); add('warning', 'W_FINAL_FEN_MISSING', '/game/final_fen', 'The plan gives no "final_fen", so the final position was not compared.', 'Add the FEN after the last ply.'); }
   if(planOwn(g, 'fingerprint')){
-    if(!ctx.fingerprint){ check('fingerprint', 'Game fingerprint', 'not checked', 'it could not be computed'); add('error', 'E_INTERNAL', '/game/fingerprint', 'The game fingerprint could not be computed on this page (it needs a secure page: https or a local file).', ''); }
+    if(!ctx.fingerprint){ const why = planFingerprintProblem(); check('fingerprint', 'Game fingerprint', 'not checked', 'it cannot be computed on this page'); add('error', 'E_FINGERPRINT_UNAVAILABLE', '/game/fingerprint', why.message, why.hint); }
     else if(g.fingerprint === ctx.fingerprint) check('fingerprint', 'Game fingerprint', 'passed', ctx.fingerprint);
     else { check('fingerprint', 'Game fingerprint', 'failed', `game ${ctx.fingerprint}`); add('error', 'E_GAME_MISMATCH', '/game/fingerprint', 'The plan was written for another game (the fingerprints differ).', 'Use "Copy game header" on the game you mean, and give that to the AI.'); }
-  } else if(ctx.forApply){ check('fingerprint', 'Game fingerprint', 'failed', 'missing'); add('error', 'E_MISSING_FIELD', '/game/fingerprint', 'A plan needs the game fingerprint to be applied.', 'Use "Copy game header" and put its "fingerprint" in the plan\'s "game".'); }
+  } else if(ctx.forApply){
+    check('fingerprint', 'Game fingerprint', 'failed', 'missing');
+    add('error', 'E_MISSING_FIELD', '/game/fingerprint', 'A plan needs the game fingerprint to be applied.', 'Use "Copy game header" and put its "fingerprint" in the plan\'s "game".');
+    if(!ctx.fingerprint){ const why = planFingerprintProblem(); add('error', 'E_FINGERPRINT_UNAVAILABLE', '/game/fingerprint', why.message, why.hint); }
+  }
   else { check('fingerprint', 'Game fingerprint', 'not checked', 'the plan gives no fingerprint'); add('warning', 'W_FINGERPRINT_MISSING', '/game/fingerprint', 'The plan gives no "fingerprint", so it cannot be applied.', 'Use "Copy game header" and put its "fingerprint" in the plan\'s "game".'); }
 
   // 4. References (only when nothing above failed).
@@ -4342,14 +4469,17 @@ function validateStoryPlan(text, ctx = {}){
     (d.claims || []).forEach((c, j) => { if(planClaimHolds(rec, c)) claimsOk.push(c); else add('error', 'E_CLAIM_MISMATCH', p + '/claims/' + j, `${rec.san} (ply ${d.ply}) is not a ${c.replace('_', ' ')}.`, 'Claims are checked against chess.js.'); });
     const fr = d.frame || {}, targets = fr.targets || [];
     if(fr.mode === 'full' && targets.length) add('error', 'E_CONFLICT', p + '/frame', 'A full-board frame cannot also have targets.', 'Use "close" (or no mode) with targets, or drop the targets.');
-    if(fr.mode === 'close' || fr.mode === 'full') notYet(p + '/frame/mode', `frame.mode "${fr.mode}"`);
+    // A close-up asked for on a move with no plan marks, whose close-up would
+    // settle on the whole board, is not one: the move keeps the full board.
+    if(fr.mode === 'close' && !targets.length && !((d.marks && d.marks.highlights) || []).length && !((d.marks && d.marks.arrows) || []).length &&
+       moveFramingBoxes(Object.assign({}, rec, { arrows: [], highlights: [], storyTargets: [] }), true).settledBox >= LOGICAL_SIZE)
+      add('warning', 'W_CLOSEUP_IS_FULL', p + '/frame/mode', `A close-up of ${rec.san} (ply ${d.ply}) would settle on the whole board, so the move keeps the full board.`, 'Its path, or its landing square and the checked king, span 6 squares or more.');
     if(endingHold && d.ply === lastPly && planOwn(d, 'hold_ms')) add('error', 'E_CONFLICT', p + '/hold_ms', `Ply ${d.ply} is the last ply of the sequence, and "ending.hold_ms" already sets its hold.`, 'Give the final hold in one place only.');
     const inRange = !range || (d.ply >= range.from_ply && d.ply <= range.to_ply);
     if(!inRange) add('warning', 'W_OUTSIDE_RANGE', p, `Ply ${d.ply} is outside the range ${range.from_ply}–${range.to_ply}; this directive would be ignored.`, '');
     out.rows.push({ ply: d.ply, label: plyLabel(rec), cls: moveClass(rec), inRange, claims: claimsOk, hold: d.hold_ms, mode: fr.mode || 'default', targets,
                     highlights: ((d.marks && d.marks.highlights) || []).map(h => h.sq), arrows: ((d.marks && d.marks.arrows) || []).map(a => a.from + '→' + a.to) });
   });
-  if(plan.ending && plan.ending.return_to_full === true) notYet('/ending/return_to_full', 'ending.return_to_full: true');
   if(!moves.length){ check('san', 'SAN of referenced plies', 'not checked', 'the plan references no ply'); add('warning', 'W_NO_MOVE_REFERENCES', '/moves', 'The plan references no ply, so no move text was compared with the game.', 'Reference at least the plies the plan is about.'); }
   else if(!sanChecked) check('san', 'SAN of referenced plies', 'not checked', 'no referenced ply is in the game');
   else check('san', 'SAN of referenced plies', sanFailed ? 'failed' : 'passed', `${sanChecked - sanFailed} of ${sanChecked} referenced plies match; the ${facts.visible - sanChecked} others are not compared one by one`);
@@ -4377,7 +4507,7 @@ function compileStoryPlan(plan, facts, fingerprint){
   const records = [], byPly = new Map(), moveMs = {};
   for(let p = from; p <= to; p++){
     const rec = moveHistory[p - 1], d = byDirective.get(p), marks = (d && d.marks) || {};
-    const eff = Object.assign({}, rec, {
+    const eff = Object.assign({}, rec, (d && d.frame && (d.frame.mode === 'close' || d.frame.mode === 'full')) ? { planFrame: d.frame.mode } : {}, {
       arrows: Object.freeze((marks.arrows || []).map(a => Object.freeze({ from: a.from, to: a.to, color: a.color || ANNOTATION_DEFAULT_COLORS.arrow }))),
       highlights: Object.freeze((marks.highlights || []).map(h => Object.freeze({ file: 'abcdefgh'.indexOf(h.sq[0]), rank: 8 - parseInt(h.sq[1], 10), sq: h.sq, color: hexToRgba(h.color || ANNOTATION_DEFAULT_COLORS.highlight, 1), alpha: 0.28 }))),
       storyTargets: Object.freeze(((d && d.frame && d.frame.targets) || []).slice()),
@@ -4392,7 +4522,9 @@ function compileStoryPlan(plan, facts, fingerprint){
     fingerprint, key: planGameKey(), range: Object.freeze({ from, to }),
     autoFrame: !!(plan.defaults && plan.defaults.auto_frame),
     records: Object.freeze(records), byPly,
-    holds: Object.freeze({ moveMs: Object.freeze(moveMs), finalMs })
+    planOpts: Object.freeze({ moveMs: Object.freeze(moveMs), finalMs,
+                              returnToFull: plan.ending && planOwn(plan.ending, 'return_to_full') ? plan.ending.return_to_full : undefined }),
+    fx: captureEffect   // Capture FX, frozen at Apply (its selector is disabled while the plan is active)
   });
 }
 // The compiled plan, checked before it may be activated: every effective
@@ -4409,7 +4541,7 @@ function checkCompiledStoryPlan(c, marksBefore){
   });
   if(planUserMarks() !== marksBefore) bad('the user\'s annotations changed');
   let tl = null;
-  try { tl = sequencePlan(c.records, EXPORT_FPS, captureEffect, c.autoFrame, c.holds); } catch(e){ bad('its timeline could not be built (' + e.message + ')'); }
+  try { tl = sequencePlan(c.records, EXPORT_FPS, c.fx, c.autoFrame, c.planOpts); } catch(e){ bad('its timeline could not be built (' + e.message + ')'); }
   if(tl && !(tl.totalFrames > 0 && tl.moves.length === c.records.length)) bad('its timeline is empty');
   return { errors: out, timeline: tl };
 }
@@ -4426,8 +4558,10 @@ function planGameKey(){
 }
 const planKeysEqual = (a, b) => a.list === b.list && a.n === b.n && a.first === b.first && a.last === b.last;
 // The active plan, if it is still bound to the loaded game.
+// (Capture FX is frozen at Apply and its selector disabled while the plan is
+// active; should the setting still differ, the plan no longer holds.)
 function storyPlanBound(){
-  return activeStoryPlan && planKeysEqual(activeStoryPlan.key, planGameKey()) ? activeStoryPlan : null;
+  return activeStoryPlan && planKeysEqual(activeStoryPlan.key, planGameKey()) && captureEffect === activeStoryPlan.fx ? activeStoryPlan : null;
 }
 // A changed game deactivates the plan (called first thing in updateHistory()
 // and before playback/export start).
@@ -4435,12 +4569,13 @@ function storyPlanBound(){
 // then stop rather than fall back to the manual sequence unannounced).
 function checkStoryPlanBinding(){
   if(activeStoryPlan && !storyPlanBound()){
-    activeStoryPlan = null;
     planTimelineShown = null;
     // After the action that changed the game (an import, say) has shown its
     // own message, so this one is not overwritten; the panel keeps it too.
-    setTimeout(() => showMessage('The loaded game changed, so the story plan was deactivated.', 'error', 5000), 0);
-    renderPlanActive('The loaded game changed, so the story plan was deactivated.');
+    const why = planKeysEqual(activeStoryPlan.key, planGameKey()) ? 'The Capture FX setting changed' : 'The loaded game changed';
+    activeStoryPlan = null;
+    setTimeout(() => showMessage(why + ', so the story plan was deactivated.', 'error', 5000), 0);
+    renderPlanActive(why + ', so the story plan was deactivated.');
     return true;
   }
   return false;
@@ -4450,11 +4585,11 @@ function sequenceInputs(){
   if(activeStoryPlan){
     const p = storyPlanBound();
     if(!p) return { error: 'The loaded game changed, so the story plan was deactivated.' };
-    return { records: p.records, from: p.range.from, to: p.range.to, autoFrame: p.autoFrame, holds: p.holds, fromPlan: true };
+    return { records: p.records, from: p.range.from, to: p.range.to, autoFrame: p.autoFrame, planOpts: p.planOpts, fromPlan: true };
   }
   const r = sequenceRange();
   if(r.error) return r;
-  return { records: r.records, from: r.from, to: r.to, autoFrame: autoFrameEvents, holds: null, fromPlan: false };
+  return { records: r.records, from: r.from, to: r.to, autoFrame: autoFrameEvents, planOpts: null, fromPlan: false };
 }
 // The record whose marks the board shows: with a plan active, the plan's
 // version of that ply (outside its range: no marks).
@@ -4569,31 +4704,95 @@ function renderPlanActive(note){
   document.getElementById('deactivatePlan').disabled = !p;
   renderPlanTimelineIfChanged();
 }
+// The camera of a sequence, move by move, read off its camera track (the crops
+// the export renders): how the camera enters each move (from the frame before
+// it: still, a cut, or an ease over N in-between frames), whether it tracks
+// during the movement, how it changes after landing (zoom-in, check or Story
+// beat, a return to the full board), where it settles, and how the sequence
+// ends. Frames are video frames from 0.
+function planCameraSummary(tl, crops){
+  const FULLBOX = LOGICAL_SIZE - 1e-6;
+  const same = (a, b) => a.sx === b.sx && a.sy === b.sy && a.box === b.box;
+  const changed = (n) => n > 0 && !same(crops[n], crops[n - 1]);
+  const lastK = tl.moves.length - 1, out = [];
+  for(let k = 0; k <= lastK; k++){
+    const m = tl.moves[k], startF = Math.ceil(m.start / 1000), landF = m.landFrame;
+    const endF = k < lastK ? Math.ceil(m.end / 1000) : tl.totalFrames;   // exclusive
+    const row = { ply: m.rec.ply, startF, landF, endF };
+    // entry
+    if(k === 0) row.entry = 'start';
+    else if(!changed(startF)) row.entry = crops[startF].box >= FULLBOX ? 'full' : 'kept';
+    else {
+      let n = 0;
+      while(startF - 1 - n > tl.moves[k - 1].landFrame && changed(startF - 1 - n)) n++;
+      row.entry = n ? 'ease' : 'cut';
+      row.entryFrames = n ? `${startF - n}-${startF}` : `${startF}`;
+    }
+    // the exit window into the next move belongs to the next move's entry
+    let exitFrom = endF;
+    if(k < lastK && changed(endF)){ while(exitFrom - 1 > landF && changed(exitFrom - 1)) exitFrom--; }
+    row.tracking = false;
+    for(let n = startF + 1; n <= Math.min(landF, endF - 1); n++) if(changed(n)) row.tracking = true;
+    let after = [];
+    for(let n = landF + 1; n < exitFrom; n++) if(changed(n)) after.push(n);
+    row.settle = after.length ? after[after.length - 1] : Math.min(landF, endF - 1);
+    if(k === lastK){
+      const fin = crops[tl.totalFrames - 1];
+      let fullFrom = tl.totalFrames - 1;
+      while(fullFrom - 1 >= startF && crops[fullFrom - 1].box >= FULLBOX) fullFrom--;
+      const returns = fin.box >= FULLBOX && fullFrom > landF && crops[fullFrom - 1].box < FULLBOX;
+      if(returns){
+        let a = fullFrom; while(a - 1 > landF && changed(a - 1)) a--;
+        row.ending = 'return'; row.returnFrames = `${a}-${fullFrom}`;
+        after = after.filter(n => n < a);   // the return itself is reported as the ending
+        row.settle = after.length ? after[after.length - 1] : Math.min(landF, endF - 1);
+      } else row.ending = fin.box >= FULLBOX ? 'full' : 'close-up';
+    }
+    const own = crops[row.settle];
+    row.own = own.box >= FULLBOX ? 'full' : 'close';
+    row.box = Math.round(own.box * 100) / 100;
+    row.afterFrames = after.length ? `${after[0]}-${after[after.length - 1]}` : '';
+    out.push(row);
+  }
+  return out;
+}
 function renderPlanTimelineIfChanged(){
   const p = storyPlanBound(), box = document.getElementById('planTimeline');
-  const want = p ? { plan: p, fx: captureEffect } : null;
-  if(planTimelineShown && want && planTimelineShown.plan === want.plan && planTimelineShown.fx === want.fx) return;
+  const want = p ? { plan: p, flipped: boardFlipped } : null;
+  if(planTimelineShown && want && planTimelineShown.plan === want.plan && planTimelineShown.flipped === want.flipped) return;
   if(!planTimelineShown && !want && !box.childNodes.length) return;
   planTimelineShown = want;
   box.textContent = '';
   if(!p) return;
-  const tl = sequencePlan(p.records, EXPORT_FPS, captureEffect, p.autoFrame, p.holds);
+  const tl = sequencePlan(p.records, EXPORT_FPS, p.fx, p.autoFrame, p.planOpts);
+  const cam = planCameraSummary(tl, cameraTrack(p.records, tl).crops);
   const head = document.createElement('div');
-  head.textContent = `Timeline of the active plan: ${(tl.durationMs / 1000).toFixed(2)} s, ${tl.totalFrames} frames (Capture FX: ${captureEffect}).`;
+  head.textContent = `Timeline of the active plan: ${(tl.durationMs / 1000).toFixed(2)} s, ${tl.totalFrames} frames at ${EXPORT_FPS} fps (Capture FX: ${p.fx}; board ${boardFlipped ? 'flipped' : 'not flipped'}). The camera is the one the export renders.`;
   box.appendChild(head);
+  const sq = (b) => (b / (LOGICAL_SIZE / 8)).toFixed(1);
   tl.moves.forEach((m, i) => {
-    const r = m.rec, last = i === tl.moves.length - 1;
-    const req = last && p.holds.finalMs != null ? p.holds.finalMs : p.holds.moveMs[r.ply];
+    const r = m.rec, c = cam[i], held = Math.round(m.holdMs);
     const d = document.createElement('div');
     d.className = 'plan-row';
-    d.dataset.ply = String(r.ply); d.dataset.start = String(m.start); d.dataset.land = String(m.land); d.dataset.end = String(m.end);
-    d.dataset.holdMs = String(m.holdMs); d.dataset.auto = m.auto ? '1' : '0';
+    Object.assign(d.dataset, { ply: String(r.ply), start: String(m.start), land: String(m.land), end: String(m.end), holdMs: String(m.holdMs), auto: m.auto ? '1' : '0',
+      holdReason: m.holdReason || '', camEntry: c.entry, camEntryFrames: c.entryFrames || '', camTracking: c.tracking ? '1' : '0', camAfter: c.afterFrames,
+      camSettle: String(c.settle), camOwn: c.own, camBox: String(c.box), camEnding: c.ending || '', camReturn: c.returnFrames || '' });
     const marks = [r.storyTargets.length ? 'targets ' + r.storyTargets.join(' ') : '', r.highlights.length ? 'highlights ' + r.highlights.map(h => h.sq).join(' ') : '', r.arrows.length ? 'arrows ' + r.arrows.map(a => a.from + '→' + a.to).join(' ') : ''].filter(Boolean).join(', ');
-    d.textContent = `Ply ${r.ply} · ${plyLabel(r)} · starts ${(m.start / EXPORT_FPS / 1000).toFixed(3)} s · lands ${(m.land / EXPORT_FPS / 1000).toFixed(3)} s · hold ${Math.round(m.holdMs)} ms` +
-                    (req != null ? (Math.round(m.holdMs) > req ? ` (requested ${req} ms, raised by the move's own minimum)` : ` (requested ${req} ms)`) : ' (default)') +
-                    (m.auto ? ' · automatic close-up' : '') + (marks ? ' · ' + marks : '');
+    const hold = `hold ${held} ms` + (m.requestedMs != null ? (held > m.requestedMs ? ` (requested ${m.requestedMs} ms; raised: ${PLAN_HOLD_REASONS[m.holdReason] || m.holdReason})` : ` (requested ${m.requestedMs} ms)`)
+                                       : (m.holdReason && m.holdReason !== 'default' ? ` (${PLAN_HOLD_REASONS[m.holdReason] || m.holdReason})` : ''));
+    const entry = c.entry === 'start' ? 'starts' : c.entry === 'full' ? 'full board, no change' : c.entry === 'kept' ? 'close-up kept from the move before' :
+                  c.entry === 'cut' ? `cut at frame ${c.entryFrames}` : `eases in over frames ${c.entryFrames}`;
+    const framing = (r.planFrame ? `plan frame "${r.planFrame}": ` : '') + (c.own === 'full' ? 'full board' : `close-up ${sq(c.box)} squares wide`);
+    const camera = `camera: ${entry}${c.tracking ? ', tracks the piece' : ''}; ${framing}` + (c.afterFrames ? `, moves after landing (frames ${c.afterFrames})` : '') + `, settled from frame ${c.settle}` +
+                   (c.ending === 'return' ? `; returns to the full board over frames ${c.returnFrames}` : c.ending === 'close-up' ? '; the sequence ends on this close-up' : c.ending === 'full' ? '; the sequence ends on the full board' : '');
+    d.textContent = `Ply ${r.ply} · ${plyLabel(r)} · frames ${c.startF}–${c.endF - 1} · lands frame ${c.landF} · ${hold}` + (m.auto ? ' · close-up' : '') + (marks ? ' · ' + marks : '') + ' · ' + camera + '.';
     box.appendChild(d);
   });
+  const foot = document.createElement('div');
+  const lastCam = cam[cam.length - 1];
+  foot.dataset.camEnding = lastCam.ending; foot.dataset.totalFrames = String(tl.totalFrames);
+  foot.textContent = `Ending: ${lastCam.ending === 'return' ? `returns to the full board (frames ${lastCam.returnFrames}); the last frame shows the full board` : lastCam.ending === 'full' ? 'the full board' : 'a close-up'}. Total ${(tl.durationMs / 1000).toFixed(2)} s, ${tl.totalFrames} frames.`;
+  box.appendChild(foot);
 }
 function planBump(){ const p = document.getElementById('planPanel'); p.dataset.seq = String((parseInt(p.dataset.seq || '0', 10) || 0) + 1); }
 function planRefusedNow(){
@@ -4630,15 +4829,18 @@ async function runStoryPlan(forApply){
         const checked = checkCompiledStoryPlan(compiled, marksBefore);
         if(checked.errors.length){ res.entries.push(...checked.errors); res.valid = false; }
         else {
-          // Holds raised by a move's own minimum (with the current Capture FX), and
-          // a sequence too long to export (it can still be played), are reported.
+          // Holds raised by a move's own minimum or by the return to the full board
+          // (with the plan's Capture FX), and a sequence too long to export (it
+          // can still be played), are reported, each with its reason.
           checked.timeline.moves.forEach((m, i) => {
-            const last = i === checked.timeline.moves.length - 1, r = m.rec;
-            const req = last && compiled.holds.finalMs != null ? compiled.holds.finalMs : compiled.holds.moveMs[r.ply];
-            if(req != null && Math.round(m.holdMs) > req){
+            const last = i === checked.timeline.moves.length - 1, r = m.rec, held = Math.round(m.holdMs);
+            const why = PLAN_HOLD_REASONS[m.holdReason] || m.holdReason;
+            if(m.requestedMs != null && held > m.requestedMs){
               const idx = (res.plan.moves || []).findIndex(d => d.ply === r.ply);
-              const path = last && compiled.holds.finalMs != null ? '/ending/hold_ms' : `/moves/${idx}/hold_ms`;
-              res.entries.push({ severity: 'warning', code: 'W_HOLD_RAISED', path, message: `Ply ${r.ply} holds ${Math.round(m.holdMs)} ms, not ${req} ms: that is the move's own minimum (camera hold or capture effect).`, hint: 'With the current Capture FX setting.' });
+              const path = last && compiled.planOpts.finalMs != null ? '/ending/hold_ms' : `/moves/${idx}/hold_ms`;
+              res.entries.push({ severity: 'warning', code: 'W_HOLD_RAISED', path, message: `Ply ${r.ply} holds ${held} ms, not ${m.requestedMs} ms: ${why}.`, hint: `With Capture FX "${compiled.fx}".` });
+            } else if(last && m.returnRaised){
+              res.entries.push({ severity: 'warning', code: 'W_HOLD_RAISED', path: '/ending/return_to_full', message: `The final hold (ply ${r.ply}) is raised to ${held} ms: ${why}.`, hint: '' });
             }
           });
           if(checked.timeline.totalFrames > MAX_EXPORT_FRAMES)
@@ -4717,7 +4919,7 @@ document.getElementById('copyGameHeader').addEventListener('click', async ()=>{
     const facts = planGameFacts();
     if(!facts.visible){ showMessage('Import or play a game first.', 'error'); return; }
     const fingerprint = await planFingerprint(facts);
-    if(!fingerprint){ showMessage('The game fingerprint needs a secure page (https or a local file).', 'error'); return; }
+    if(!fingerprint){ const why = planFingerprintProblem(); showMessage(why.message + ' ' + why.hint, 'error', 8000); document.getElementById('planActiveStatus').textContent = why.message; return; }
     const header = { plies: facts.visible };
     if(planFen4(facts.start) !== PLAN_STANDARD_START) header.start_fen = facts.start;
     header.final_fen = facts.final;
