@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Chess Cinema Studio — Phase 4B.2 Test</title>
+<style>
+  :root { color-scheme: dark; --bg: #121212; --fg: #eaeaea; --muted: #a8a8a8; --accent: #f0b429; --panel: #1e1e1e; --line: #333; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 16px; }
+  .banner { background: var(--accent); color: #111; font-weight: 700; padding: 10px 16px; text-align: center; }
+  h1 { font-size: 1.5rem; margin: 16px 0 4px; }
+  h2 { font-size: 1.15rem; margin: 28px 0 8px; border-bottom: 1px solid var(--line); padding-bottom: 4px; }
+  p, li { color: var(--fg); }
+  .muted { color: var(--muted); font-size: 0.9rem; }
+  code { background: var(--panel); padding: 1px 4px; border-radius: 4px; font-size: 0.85em; overflow-wrap: anywhere; }
+  .open { display: block; text-align: center; background: var(--accent); color: #111; font-weight: 700; text-decoration: none; padding: 14px; border-radius: 8px; margin: 16px 0; font-size: 1.1rem; }
+  a { color: var(--accent); }
+  ol li, ul li { margin: 6px 0; }
+  textarea { width: 100%; height: 160px; background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; font: 12px/1.4 ui-monospace, monospace; padding: 8px; }
+  button { background: var(--panel); color: var(--fg); border: 1px solid var(--accent); border-radius: 6px; padding: 8px 14px; font-size: 0.95rem; margin: 6px 0 12px; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+  td, th { border: 1px solid var(--line); padding: 6px; text-align: left; vertical-align: top; }
+</style>
+</head>
+<body>
+<div class="banner">TEST BUILD — not the production site</div>
+<main>
+<h1>Chess Cinema Studio — Phase 4B.2 Test</h1>
+<p class="muted">An isolated Cloudflare Pages preview of a development branch. Production (chesscinemastudio.in) is not affected.
+Application: <code>public/chess-cinema/index.html</code> from commit <code>ff71e1ff86f2c9b52453af72b36f9bc7add54f85</code> (Phase 4B.2), unmodified
+(SHA-256 <code>2b36098f6beb9981ce733f0000c135f89e5a43ccad58a9dc8b87bf081e079ba5</code>). Branch <code>claude/chess-cinema-4b2-test</code>.</p>
+
+<a class="open" href="../chess-cinema/">Open Chess Cinema (Phase 4B.2)</a>
+
+<h2>Quick test: a story plan on the sample game</h2>
+<ol>
+  <li>Open Chess Cinema (button above) and press <b>Load sample game</b> (Legal's mate, 13 plies).</li>
+  <li>Open the <b>Story plan</b> panel. Press <b>Copy game header</b>: its fingerprint must be
+      <code>sha256:5879152c8d428f840ff9919d5cfec074a954590e56d1987cda0c216793c12b7a</code>.</li>
+  <li>Copy the plan below, paste it into the Story plan box and press <b>Validate</b>: expected "Valid: no errors, 0 warnings".</li>
+  <li>Press <b>Apply</b>. The inspector should show 16.73 s, 502 frames; plies 10 and 11 "eases in", ply 12 eases out to the full board,
+      ply 13 zooms in after landing and returns to the full board (frames 426–434).</li>
+  <li>Press <b>Play Sequence</b>, then <b>Export Sequence</b> (a WebM download).</li>
+  <li>Press <b>Deactivate</b> and check that Play/Export use your own range again (no plan marks).</li>
+</ol>
+<textarea id="plan1" readonly>{
+  "schema": "chess-cinema-plan/1",
+  "game": {"plies":13,"final_fen":"rn1q1bnr/ppp1kB1p/3p2p1/3NN3/4P3/8/PPPP1PPP/R1BbK2R b KQ - 2 7","fingerprint":"sha256:5879152c8d428f840ff9919d5cfec074a954590e56d1987cda0c216793c12b7a"},
+  "analysis": {"source": "illustrative (not a Chessis export)"},
+  "range": {"from_ply": 1, "to_ply": 13},
+  "defaults": {"auto_frame": false},
+  "moves": [
+    {"ply": 1, "san": "e4", "hold_ms": 250},
+    {"ply": 2, "san": "e5", "hold_ms": 250},
+    {"ply": 3, "san": "Nf3", "hold_ms": 250},
+    {"ply": 4, "san": "d6", "hold_ms": 250},
+    {"ply": 5, "san": "Bc4", "hold_ms": 250},
+    {"ply": 6, "san": "Bg4", "hold_ms": 1200, "marks": {"arrows": [{"from": "g4", "to": "d1"}]}},
+    {"ply": 7, "san": "Nc3", "hold_ms": 300},
+    {"ply": 8, "san": "g6", "hold_ms": 1000},
+    {"ply": 9, "san": "Nxe5", "claims": ["capture"], "frame": {"mode": "close", "targets": ["d1"]}, "hold_ms": 2500},
+    {"ply": 10, "san": "Bxd1", "claims": ["capture"], "frame": {"mode": "close"}, "hold_ms": 1800},
+    {"ply": 11, "san": "Bxf7+", "claims": ["capture", "check"], "frame": {"mode": "close"}, "hold_ms": 1800},
+    {"ply": 13, "san": "Nd5#", "claims": ["mate"], "frame": {"mode": "close"}}
+  ],
+  "ending": {"hold_ms": 4000, "return_to_full": true}
+}</textarea>
+<button data-copy="plan1">Copy plan</button>
+
+<h2>Second example: discovered check (69-ply game, plies 41–56)</h2>
+<p>Paste this PGN into the PGN box and press <b>Import PGN</b>, then validate and apply the plan below. Expected: valid, no warnings, 17.57 s, 527 frames, ends on the full board.</p>
+<textarea id="pgn2" readonly>1. d4 e6 2. c4 Nf6 3. a3 Nc6 4. Nc3 d5 5. Nf3 dxc4 6. e4 Bd6 7. e5 Ne4 8. Nxe4 Be7 9. Bxc4 O-O 10. O-O a6 11. Ba2 b5 12. Qd3 Bb7 13. Bb1 f6 14. exf6 Bxf6 15. Nxf6+ Qxf6 16. Qxh7+ Kf7 17. Ng5+ Ke7 18. d5 exd5 19. Re1+ Ne5 20. Be3 Rad8 21. Bc5+ Kd7 22. Qc2 Rfe8 23. Nh3 Ng4 24. Ba2 Rxe1+ 25. Rxe1 d4 26. Be6+ Kc6 27. Be7+ Kb6 28. Bxf6 Nxf6 29. Qf5 Re8 30. b4 Bc8 31. Qc5+ Kb7 32. Bd5+ Kb8 33. Rxe8 Nxe8 34. Qc6 Nd6 35. Qa8#</textarea>
+<button data-copy="pgn2">Copy PGN</button>
+<textarea id="plan2" readonly>{
+  "schema": "chess-cinema-plan/1",
+  "game": {"plies":69,"final_fen":"Qkb5/2p3p1/p2n4/1p1B4/1P1p4/P6N/5PPP/6K1 b - - 3 35","fingerprint":"sha256:3a995f68223ef717ec5c86d99d4027cbd3dcb4dd6c5e6c2909b19b19792e0d50"},
+  "analysis": {"source": "illustrative (not a Chessis export)"},
+  "range": {"from_ply": 41, "to_ply": 56},
+  "defaults": {"auto_frame": false},
+  "moves": [
+    {"ply": 41, "san": "Bc5+", "hold_ms": 450},
+    {"ply": 42, "san": "Kd7", "hold_ms": 300},
+    {"ply": 43, "san": "Qc2", "hold_ms": 450},
+    {"ply": 44, "san": "Rfe8", "hold_ms": 300},
+    {"ply": 45, "san": "Nh3", "hold_ms": 300},
+    {"ply": 46, "san": "Ng4", "hold_ms": 300},
+    {"ply": 47, "san": "Ba2", "hold_ms": 300},
+    {"ply": 48, "san": "Rxe1+", "hold_ms": 500},
+    {"ply": 49, "san": "Rxe1", "hold_ms": 500},
+    {"ply": 50, "san": "d4", "hold_ms": 300},
+    {"ply": 51, "san": "Be6+", "hold_ms": 450},
+    {"ply": 52, "san": "Kc6", "hold_ms": 1500, "marks": {"arrows": [{"from": "c2", "to": "c6"}]}},
+    {"ply": 53, "san": "Be7+", "claims": ["check"], "frame": {"mode": "close", "targets": ["f6"]}, "hold_ms": 2600},
+    {"ply": 54, "san": "Kb6", "hold_ms": 1000},
+    {"ply": 55, "san": "Bxf6", "claims": ["capture"], "frame": {"mode": "close"}, "hold_ms": 1800},
+    {"ply": 56, "san": "Nxf6", "claims": ["capture"], "frame": {"mode": "full"}}
+  ],
+  "ending": {"hold_ms": 3500, "return_to_full": true}
+}</textarea>
+<button data-copy="plan2">Copy plan</button>
+
+<h2>Feature checklist</h2>
+<table>
+<tr><th>#</th><th>Feature</th><th>How to check</th></tr>
+<tr><td>1</td><td>Board, import, playback</td><td>Load sample game / Import PGN; Next/Prev; timeline taps</td></tr>
+<tr><td>2</td><td>Sequence range, timing, export</td><td>Set From/To, Play Sequence, Export Sequence</td></tr>
+<tr><td>3</td><td>Manual and automatic framing</td><td>Story Targets / highlights / arrows on a move; the automatic close framing setting; export</td></tr>
+<tr><td>4</td><td>Story plan validation</td><td>Validate the plans above; try a broken one (e.g. change a fingerprint character: E_GAME_MISMATCH)</td></tr>
+<tr><td>5</td><td>Copy game header, fingerprint</td><td>Fingerprint shown above for the sample game</td></tr>
+<tr><td>6</td><td>Apply / Deactivate</td><td>Status line "Plan active: …"; Deactivate restores the manual sequence</td></tr>
+<tr><td>7</td><td>Targets, close/full, marks, holds, return to full</td><td>Inspector rows; Play Sequence</td></tr>
+<tr><td>8</td><td>Inspector, camera transitions, export</td><td>Inspector camera text; export with a plan active</td></tr>
+<tr><td>9</td><td>With and without a plan</td><td>Play/Export before Apply, after Apply, after Deactivate</td></tr>
+<tr><td>10</td><td>HTTPS, crypto.subtle</td><td>Copy game header works (it fails over plain http)</td></tr>
+</table>
+<p class="muted">Export uses WebCodecs (VP9) where the browser offers it, otherwise MediaRecorder. Long exports on a phone can take several minutes.</p>
+
+<h2>Phase 5A: storytelling with an external AI</h2>
+<p>For Gemini or ChatGPT. Nothing here calls an AI; you paste the prompt yourself. Open on GitHub (rendered, with a copy button on the prompt block):</p>
+<ul>
+  <li><a href="https://github.com/atharvatathe7-sudo/Chesscinemastudio-site/blob/claude/chess-cinema-4b2-test/docs/chess-cinema/storytelling-prompt.md">Prompt (copy-paste)</a></li>
+  <li><a href="https://github.com/atharvatathe7-sudo/Chesscinemastudio-site/blob/claude/chess-cinema-4b2-test/docs/chess-cinema/storytelling-guide.md">Storytelling guide</a></li>
+  <li><a href="https://github.com/atharvatathe7-sudo/Chesscinemastudio-site/blob/claude/chess-cinema-4b2-test/docs/chess-cinema/ai-trials.md">AI trials procedure and log</a></li>
+  <li><a href="https://github.com/atharvatathe7-sudo/Chesscinemastudio-site/tree/claude/chess-cinema-4b2-test/docs/chess-cinema/examples">Examples (positive packets and validation cases)</a></li>
+</ul>
+<p class="muted">Workflow: load the game → Copy game header → paste the prompt with the header, PGN and analysis into the AI → paste its JSON into Story plan → Validate → (Copy report back to the AI if needed) → Apply → read the inspector → Play / Export.</p>
+</main>
+<script>
+document.querySelectorAll('button[data-copy]').forEach((b) => b.addEventListener('click', async () => {
+  const t = document.getElementById(b.dataset.copy);
+  try { await navigator.clipboard.writeText(t.value); b.textContent = 'Copied'; }
+  catch (e) { t.select(); try { document.execCommand('copy'); b.textContent = 'Copied'; } catch (e2) { b.textContent = 'Select and copy by hand'; } }
+  setTimeout(() => { b.textContent = b.dataset.copy.startsWith('pgn') ? 'Copy PGN' : 'Copy plan'; }, 2000);
+}));
+</script>
+</body>
+</html>
